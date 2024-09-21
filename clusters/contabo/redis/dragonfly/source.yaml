@@ -5,7 +5,7 @@ metadata:
   name: dragonfly
   namespace: flux-system
 spec:
-  interval: 1s
+  interval: 1m
   url: oci://ghcr.io/dragonflydb/dragonfly/helm/dragonfly
   ref:
     tag: v1.22.2

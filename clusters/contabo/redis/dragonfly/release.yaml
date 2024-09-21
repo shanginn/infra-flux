@@ -28,4 +28,4 @@ spec:
       - --maxmemory=8gb
     storage:
       enabled: true
-      requests: 10Gi
+      requests: 12Gi

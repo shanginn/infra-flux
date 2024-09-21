@@ -24,6 +24,8 @@ spec:
         for: 0m
         labels:
           severity: critical
+    extraArgs:
+      - --maxmemory=8gb
     storage:
       enabled: true
-      requests: 1024Mi
+      requests: 5Gi

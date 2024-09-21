@@ -12,7 +12,7 @@ spec:
       sourceRef:
         kind: HelmRepository
         name: dragonfly
-      version: v1.22.1
+      version: v1.22.2
   interval: 10m0s
   values:
     podSecurityContext:

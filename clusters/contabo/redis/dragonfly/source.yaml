@@ -7,3 +7,5 @@ metadata:
 spec:
   interval: 10m
   url: oci://ghcr.io/dragonflydb/dragonfly/helm/dragonfly
+  ref:
+    tag: v1.22.2

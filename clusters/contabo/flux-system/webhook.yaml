@@ -6,7 +6,7 @@ metadata:
   namespace: flux-system
 spec:
   rules:
-    - host: __flux__webhook.shanginn.io
+    - host: flux___webhook.shanginn.io
       http:
         paths:
           - pathType: Prefix

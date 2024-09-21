@@ -17,7 +17,7 @@ spec:
     kind: OCIRepository
     name: dragonfly
     namespace: flux-system
-  interval: 10m0s
+  interval: 1m
   values:
     podSecurityContext:
       fsGroup: 2000

@@ -5,6 +5,7 @@ metadata:
   name: webhook-receiver
   namespace: flux-system
 spec:
+  ingressClassName: nginx
   rules:
     - host: flux---webhook.shanginn.io
       http:

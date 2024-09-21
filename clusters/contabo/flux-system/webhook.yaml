@@ -4,13 +4,6 @@ kind: Ingress
 metadata:
   name: webhook-receiver
   namespace: flux-system
-  labels:
-    app.kubernetes.io/component: web
-    app.kubernetes.io/instance: flux-webhook
-    app.kubernetes.io/managed-by: Flux
-    app.kubernetes.io/name: flux-webhook
-    app.kubernetes.io/part-of: temporal
-    app.kubernetes.io/version: 1.19.1
 spec:
   ingressClassName: nginx
   rules:

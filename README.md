@@ -24,3 +24,15 @@ flux bootstrap github \
     --path=./clusters/contabo \
     --personal
 ```
+
+## Required Secrets
+
+The following secrets need to be manually created in the cluster:
+
+### Monitoring Namespace
+- `grafana-admin-credentials`
+  ```bash
+  kubectl create secret generic grafana-admin-credentials \
+    --namespace monitoring \
+    --from-literal=admin-password='your-secure-password'
+  ```

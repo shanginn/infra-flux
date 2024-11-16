@@ -3,4 +3,5 @@ kind: Kustomization
 resources:
   - namespace.yaml
   - prometheus/source.yaml
-  - prometheus/release.yaml 
+  - prometheus/release.yaml
+  - flux-kustomization.yaml

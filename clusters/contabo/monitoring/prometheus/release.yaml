@@ -22,11 +22,6 @@ spec:
         ingressClassName: nginx
         hosts:
           - grafana.shanginn.io
-      adminPassword:
-        valueFrom:
-          secretKeyRef:
-            name: grafana-admin-credentials
-            key: admin-password
     prometheus:
       prometheusSpec:
         retention: 7d

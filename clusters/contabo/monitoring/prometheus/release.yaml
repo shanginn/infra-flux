@@ -39,12 +39,3 @@ spec:
               resources:
                 requests:
                   storage: 10Gi
-    kubeStateMetrics:
-      enabled: true
-      resources:
-        limits:
-          cpu: 100m
-          memory: 128Mi
-        requests:
-          cpu: 10m
-          memory: 32Mi

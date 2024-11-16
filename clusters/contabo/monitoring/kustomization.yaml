@@ -4,4 +4,5 @@ resources:
   - namespace.yaml
   - prometheus/source.yaml
   - prometheus/release.yaml
+  - kube-state-metrics/release.yaml
   - flux-kustomization.yaml

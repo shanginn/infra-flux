@@ -1,0 +1,78 @@
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: minio-primerochka-setup
+  namespace: minio
+spec:
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: minio-config
+        image: minio/mc:latest
+        env:
+        - name: MINIO_ROOT_USER
+          valueFrom:
+            secretKeyRef:
+              name: minio-root-credentials
+              key: root-user
+        - name: MINIO_ROOT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: minio-root-credentials
+              key: root-password
+        command:
+        - /bin/sh
+        - -c
+        - |
+          echo "Configuring MinIO for primerochka..."
+          mc alias set myminio http://minio:9000 $MINIO_ROOT_USER $MINIO_ROOT_PASSWORD
+          
+          # Check if user already exists
+          if mc admin user info myminio primerochka-user >/dev/null 2>&1; then
+            echo "User 'primerochka-user' already exists, skipping setup"
+            exit 0
+          fi
+          
+          # Create bucket
+          mc mb myminio/primerochka --ignore-existing
+          echo "Bucket 'primerochka' created successfully"
+          
+          # Generate password and create API user
+          PRIMEROCHKA_PASSWORD=$(openssl rand -base64 32)
+          mc admin user add myminio primerochka-user $PRIMEROCHKA_PASSWORD
+          
+          # Store credentials in secret
+          kubectl create secret generic primerochka-minio-credentials \
+            --from-literal=username=primerochka-user \
+            --from-literal=password=$PRIMEROCHKA_PASSWORD \
+            --dry-run=client -o yaml | kubectl apply -f -
+          
+          # Create policy for bucket access
+          cat > /tmp/primerochka-policy.json << EOF
+          {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Effect": "Allow",
+                "Action": [
+                  "s3:GetObject",
+                  "s3:PutObject",
+                  "s3:DeleteObject",
+                  "s3:ListBucket"
+                ],
+                "Resource": [
+                  "arn:aws:s3:::primerochka",
+                  "arn:aws:s3:::primerochka/*"
+                ]
+              }
+            ]
+          }
+          EOF
+          
+          # Add policy and attach to user
+          mc admin policy create myminio primerochka-policy /tmp/primerochka-policy.json
+          mc admin policy attach myminio primerochka-policy --user primerochka-user
+          
+          echo "User 'primerochka-user' created and configured successfully"

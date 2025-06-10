@@ -5,7 +5,7 @@ metadata:
   name: minio-primerochka-setup
   namespace: minio
   annotations:
-    "job-revision": "2"
+    "job-revision": "3"
 spec:
   ttlSecondsAfterFinished: 3600
   template:

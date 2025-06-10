@@ -21,7 +21,7 @@ spec:
     persistence:
       enabled: true
       size: 350Gi
-    replicas: 4
+    replicas: 16
     resources:
       requests:
         memory: 1024Mi

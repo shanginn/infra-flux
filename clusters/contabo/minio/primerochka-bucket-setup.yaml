@@ -55,12 +55,12 @@ spec:
                 # For simplicity, we'll assume if user exists, setup was done.
                 # If you need to ensure policy/password are updated, add logic here.
                 echo "Skipping full setup as user '$USER_NAME' exists."
-                
+              
                 exit 0
               fi
               
               echo "User '$USER_NAME' does not exist. Proceeding with full setup."
-            
+              
               # Generate password
               PRIMEROCHKA_PASSWORD=$(head /dev/urandom | tr -dc 'A-Za-z0-9' | head -c 32)
             
@@ -72,8 +72,9 @@ spec:
               mc mb myminio/"$BUCKET_NAME" --ignore-existing
               echo "Bucket '$BUCKET_NAME' ensured."
               
+              POLICY_FILE_PATH="/tmp/${POLICY_NAME}.json"
               # Create policy content
-              cat > /tmp/"$POLICY_NAME".json << EOF
+              cat > "$POLICY_FILE_PATH" <<EOF
               {
                 "Version": "2012-10-17",
                 "Statement": [
@@ -93,17 +94,15 @@ spec:
                 ]
               }
               EOF
-              
-              # Add/Update policy and attach to user (using 'set' for policy is idempotent for create/update)
-              mc admin policy set myminio "$POLICY_NAME" /tmp/"$POLICY_NAME".json
+
+              mc admin policy create myminio "$POLICY_NAME" "$POLICY_FILE_PATH"
               echo "Policy '$POLICY_NAME' created/updated."
+
+              mc admin policy attach myminio "$POLICY_NAME" --user "$USER_NAME"
+              echo "Policy '$POLICY_NAME' attached to user '$USER_NAME'."
               
-              # Set policy for user (this replaces all existing policies for the user with this one)
-              # If you want to ADD a policy without removing others, use 'mc admin policy attach'
-              # For a single dedicated policy, 'set' is often simpler.
-              mc admin policy set-user myminio "$POLICY_NAME" "$USER_NAME"
-              # Or, if you prefer to attach (can be run multiple times, might error if already attached depending on mc version)
-              # mc admin policy attach myminio "$POLICY_NAME" --user "$USER_NAME"
-              echo "Policy '$POLICY_NAME' set for user '$USER_NAME'."
+              # Clean up temporary policy file
+              rm "$POLICY_FILE_PATH"
+              echo "Temporary policy file '$POLICY_FILE_PATH' removed."
               
               echo "MinIO configuration for '$BUCKET_NAME' and user '$USER_NAME' completed successfully."

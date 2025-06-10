@@ -4,6 +4,8 @@ kind: Job
 metadata:
   name: minio-primerochka-setup
   namespace: minio
+  annotations:
+    jobRevision: "2"
 spec:
   ttlSecondsAfterFinished: 3600
   template:

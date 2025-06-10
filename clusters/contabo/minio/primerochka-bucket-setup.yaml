@@ -10,7 +10,6 @@ spec:
   ttlSecondsAfterFinished: 3600
   template:
     spec:
-      serviceAccountName: minio-setup-sa
       restartPolicy: Never
       containers:
         - name: minio-config

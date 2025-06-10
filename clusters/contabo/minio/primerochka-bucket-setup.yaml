@@ -5,74 +5,117 @@ metadata:
   name: minio-primerochka-setup
   namespace: minio
 spec:
+  ttlSecondsAfterFinished: 3600
   template:
     spec:
+      serviceAccountName: minio-setup-sa
       restartPolicy: Never
       containers:
-      - name: minio-config
-        image: minio/mc:latest
-        env:
-        - name: MINIO_ROOT_USER
-          valueFrom:
-            secretKeyRef:
-              name: minio-root-credentials
-              key: root-user
-        - name: MINIO_ROOT_PASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: minio-root-credentials
-              key: root-password
-        command:
-        - /bin/sh
-        - -c
-        - |
-          echo "Configuring MinIO for primerochka..."
-          mc alias set myminio http://minio:9000 $MINIO_ROOT_USER $MINIO_ROOT_PASSWORD
-          
-          # Check if user already exists
-          if mc admin user info myminio primerochka-user >/dev/null 2>&1; then
-            echo "User 'primerochka-user' already exists, skipping setup"
-            exit 0
-          fi
-          
-          # Create bucket
-          mc mb myminio/primerochka --ignore-existing
-          echo "Bucket 'primerochka' created successfully"
-          
-          # Generate password and create API user
-          PRIMEROCHKA_PASSWORD=$(openssl rand -base64 32)
-          mc admin user add myminio primerochka-user $PRIMEROCHKA_PASSWORD
-          
-          # Store credentials in secret
-          kubectl create secret generic primerochka-minio-credentials \
-            --from-literal=username=primerochka-user \
-            --from-literal=password=$PRIMEROCHKA_PASSWORD \
-            --dry-run=client -o yaml | kubectl apply -f -
-          
-          # Create policy for bucket access
-          cat > /tmp/primerochka-policy.json << EOF
-          {
-            "Version": "2012-10-17",
-            "Statement": [
+        - name: minio-config
+          image: alpine/k8s:latest
+          env:
+            - name: MINIO_ROOT_USER
+              valueFrom:
+                secretKeyRef:
+                  name: minio-root-credentials
+                  key: root-user
+            - name: MINIO_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: minio-root-credentials
+                  key: root-password
+            - name: MINIO_SERVER_URL
+              value: http://minio.minio.svc.cluster.local:9000
+            - name: BUCKET_NAME
+              value: primerochka
+            - name: USER_NAME
+              value: primerochka-user
+            - name: POLICY_NAME
+              value: primerochka-policy
+            - name: SECRET_NAME
+              value: primerochka-minio-credentials
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e # Exit immediately if a command exits with a non-zero status.
+              
+              echo "Installing dependencies (mc, openssl)..."
+              apk add --no-cache mc openssl
+              
+              echo "Waiting for MinIO server to be ready at $MINIO_SERVER_URL..."
+              until mc alias set myminio $MINIO_SERVER_URL "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD"; do
+                echo "MinIO not ready yet, retrying in 10 seconds..."
+                sleep 10
+              done
+              echo "Successfully set alias for MinIO."
+              
+              echo "Configuring MinIO for $BUCKET_NAME..."
+              
+              # Check if user already exists (more robust check)
+              if mc admin user info myminio "$USER_NAME" >/dev/null 2>&1; then
+                echo "User '$USER_NAME' already exists. Checking if configuration is up-to-date."
+                # Potentially update password or policy if needed, or just exit.
+                # For simplicity, we'll assume if user exists, setup was done.
+                # If you need to ensure policy/password are updated, add logic here.
+                echo "Skipping full setup as user '$USER_NAME' exists."
+                # You might still want to ensure bucket and policy exist/are correct
+              else
+                echo "User '$USER_NAME' does not exist. Proceeding with full setup."
+              
+                # Generate password
+                PRIMEROCHKA_PASSWORD=$(openssl rand -base64 32)
+              
+                # Create API user
+                mc admin user add myminio "$USER_NAME" "$PRIMEROCHKA_PASSWORD"
+                echo "User '$USER_NAME' created."
+              
+                # Store credentials in secret
+                # Ensure namespace is specified for kubectl if not running in 'default' or if ambiguous
+                kubectl create secret generic "$SECRET_NAME" \
+                  --namespace "$NAMESPACE" \
+                  --from-literal=username="$USER_NAME" \
+                  --from-literal=password="$PRIMEROCHKA_PASSWORD" \
+                  --dry-run=client -o yaml | kubectl apply -f -
+                echo "Secret '$SECRET_NAME' created/updated for user '$USER_NAME'."
+              fi # End of user creation block
+              
+              # Create bucket (idempotent)
+              mc mb myminio/"$BUCKET_NAME" --ignore-existing
+              echo "Bucket '$BUCKET_NAME' ensured."
+              
+              # Create policy content
+              cat > /tmp/"$POLICY_NAME".json << EOF
               {
-                "Effect": "Allow",
-                "Action": [
-                  "s3:GetObject",
-                  "s3:PutObject",
-                  "s3:DeleteObject",
-                  "s3:ListBucket"
-                ],
-                "Resource": [
-                  "arn:aws:s3:::primerochka",
-                  "arn:aws:s3:::primerochka/*"
+                "Version": "2012-10-17",
+                "Statement": [
+                  {
+                    "Effect": "Allow",
+                    "Action": [
+                      "s3:GetObject",
+                      "s3:PutObject",
+                      "s3:DeleteObject",
+                      "s3:ListBucket"
+                    ],
+                    "Resource": [
+                      "arn:aws:s3:::$BUCKET_NAME",
+                      "arn:aws:s3:::$BUCKET_NAME/*"
+                    ]
+                  }
                 ]
               }
-            ]
-          }
-          EOF
-          
-          # Add policy and attach to user
-          mc admin policy create myminio primerochka-policy /tmp/primerochka-policy.json
-          mc admin policy attach myminio primerochka-policy --user primerochka-user
-          
-          echo "User 'primerochka-user' created and configured successfully"
+              EOF
+              
+              # Add/Update policy and attach to user (using 'set' for policy is idempotent for create/update)
+              mc admin policy set myminio "$POLICY_NAME" /tmp/"$POLICY_NAME".json
+              echo "Policy '$POLICY_NAME' created/updated."
+              
+              # Set policy for user (this replaces all existing policies for the user with this one)
+              # If you want to ADD a policy without removing others, use 'mc admin policy attach'
+              # For a single dedicated policy, 'set' is often simpler.
+              mc admin policy set-user myminio "$POLICY_NAME" "$USER_NAME"
+              # Or, if you prefer to attach (can be run multiple times, might error if already attached depending on mc version)
+              # mc admin policy attach myminio "$POLICY_NAME" --user "$USER_NAME"
+              echo "Policy '$POLICY_NAME' set for user '$USER_NAME'."
+              
+              echo "MinIO configuration for '$BUCKET_NAME' and user '$USER_NAME' completed successfully."

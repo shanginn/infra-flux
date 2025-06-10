@@ -4,4 +4,5 @@ kind: Kustomization
 resources:
   - source.yaml
   - release.yaml
+  - minio-setup-rbac.yaml
   - primerochka-bucket-setup.yaml

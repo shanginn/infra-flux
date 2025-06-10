@@ -1,0 +1,30 @@
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: minio
+  namespace: minio
+spec:
+  chart:
+    spec:
+      chart: minio
+      sourceRef:
+        kind: HelmRepository
+        name: minio
+        namespace: flux-system
+      version: 5.x
+  interval: 1m
+  values:
+    auth:
+      existingSecret: minio-root-credentials
+    defaultBuckets: "data"
+    persistence:
+      enabled: true
+      size: 350Gi
+    resources:
+      requests:
+        memory: 1024Mi
+        cpu: 500m
+      limits:
+        memory: 2048Mi
+        cpu: 900m

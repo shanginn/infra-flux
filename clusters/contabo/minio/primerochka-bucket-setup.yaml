@@ -12,7 +12,7 @@ spec:
       restartPolicy: Never
       containers:
         - name: minio-config
-          image: alpine/k8s:1.33.1
+          image: minio/mc:latest
           env:
             - name: MINIO_ROOT_USER
               valueFrom:
@@ -32,17 +32,12 @@ spec:
               value: primerochka-user
             - name: POLICY_NAME
               value: primerochka-policy
-            - name: SECRET_NAME
-              value: primerochka-minio-credentials
           command:
             - /bin/sh
             - -c
             - |
               set -e
-              
-              echo "Installing dependencies (mc, openssl)..."
-              apk add --no-cache mc openssl
-              
+
               echo "Waiting for MinIO server to be ready at $MINIO_SERVER_URL..."
               until mc alias set myminio $MINIO_SERVER_URL "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD"; do
                 echo "MinIO not ready yet, retrying in 10 seconds..."
@@ -59,26 +54,17 @@ spec:
                 # For simplicity, we'll assume if user exists, setup was done.
                 # If you need to ensure policy/password are updated, add logic here.
                 echo "Skipping full setup as user '$USER_NAME' exists."
-                # You might still want to ensure bucket and policy exist/are correct
-              else
-                echo "User '$USER_NAME' does not exist. Proceeding with full setup."
+                
+                exit 0
               
-                # Generate password
-                PRIMEROCHKA_PASSWORD=$(openssl rand -base64 32)
-              
-                # Create API user
-                mc admin user add myminio "$USER_NAME" "$PRIMEROCHKA_PASSWORD"
-                echo "User '$USER_NAME' created."
-              
-                # Store credentials in secret
-                # Ensure namespace is specified for kubectl if not running in 'default' or if ambiguous
-                kubectl create secret generic "$SECRET_NAME" \
-                  --namespace "$NAMESPACE" \
-                  --from-literal=username="$USER_NAME" \
-                  --from-literal=password="$PRIMEROCHKA_PASSWORD" \
-                  --dry-run=client -o yaml | kubectl apply -f -
-                echo "Secret '$SECRET_NAME' created/updated for user '$USER_NAME'."
-              fi # End of user creation block
+              echo "User '$USER_NAME' does not exist. Proceeding with full setup."
+            
+              # Generate password
+              PRIMEROCHKA_PASSWORD=$(head /dev/urandom | tr -dc 'A-Za-z0-9' | head -c 32)
+            
+              # Create API user
+              mc admin user add myminio "$USER_NAME" "$PRIMEROCHKA_PASSWORD"
+              echo "User '$USER_NAME' created. with password '$PRIMEROCHKA_PASSWORD'."
               
               # Create bucket (idempotent)
               mc mb myminio/"$BUCKET_NAME" --ignore-existing

@@ -15,13 +15,12 @@ spec:
       version: 5.x
   interval: 1m
   values:
-    auth:
-      existingSecret: minio-root-credentials
+    users: []
     defaultBuckets: "data"
     persistence:
       enabled: true
       size: 350Gi
-    replicas: 16
+    replicas: 4
     resources:
       requests:
         memory: 1024Mi

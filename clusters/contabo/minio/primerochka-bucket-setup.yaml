@@ -4,8 +4,6 @@ kind: Job
 metadata:
   name: minio-primerochka-setup
   namespace: minio
-  annotations:
-    "job-revision": "3"
 spec:
   ttlSecondsAfterFinished: 3600
   template:
@@ -19,13 +17,13 @@ spec:
             - name: MINIO_ROOT_USER
               valueFrom:
                 secretKeyRef:
-                  name: minio-root-credentials
-                  key: root-user
+                  name: minio
+                  key: rootUser
             - name: MINIO_ROOT_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: minio-root-credentials
-                  key: root-password
+                  name: minio
+                  key: rootPassword
             - name: MINIO_SERVER_URL
               value: http://minio.minio.svc.cluster.local:9000
             - name: BUCKET_NAME

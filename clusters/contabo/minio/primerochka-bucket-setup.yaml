@@ -57,6 +57,7 @@ spec:
                 echo "Skipping full setup as user '$USER_NAME' exists."
                 
                 exit 0
+              fi
               
               echo "User '$USER_NAME' does not exist. Proceeding with full setup."
             

@@ -38,11 +38,15 @@ spec:
       data:
         mode: "defaultStorageClass"
         defaultStorageClass:
+          accessModes:
+            - ReadWriteOnce
           requests:
             storage: "50Gi"
       logs:
         mode: "defaultStorageClass"
         defaultStorageClass:
+          accessModes:
+            - ReadWriteOnce
           requests:
             storage: "1Gi"
             

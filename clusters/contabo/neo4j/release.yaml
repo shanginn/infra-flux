@@ -21,20 +21,20 @@ spec:
       acceptLicenseAgreement: "yes"
     volumes:
       data:
-        mode: "volume"
-        volume:
-          persistentVolumeClaim:
-            storageClass: "local-path"
-            accessModes:
-              - ReadWriteOnce
+        mode: "dynamic"
+        dynamic:
+          storageClassName: "local-path"
+          accessModes:
+            - ReadWriteOnce
+          requests:
             storage: "10Gi"
       logs:
-        mode: "volume" 
-        volume:
-          persistentVolumeClaim:
-            storageClass: "local-path"
-            accessModes:
-              - ReadWriteOnce
+        mode: "dynamic" 
+        dynamic:
+          storageClassName: "local-path"
+          accessModes:
+            - ReadWriteOnce
+          requests:
             storage: "5Gi"
     services:
       neo4j:

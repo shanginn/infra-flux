@@ -1,0 +1,51 @@
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: neo4j
+  namespace: neo4j
+spec:
+  chart:
+    spec:
+      chart: neo4j
+      sourceRef:
+        kind: HelmRepository
+        name: neo4j
+        namespace: flux-system
+      version: 5.x
+  interval: 1m
+  values:
+    neo4j:
+      name: "neo4j"
+      edition: "community"
+      acceptLicenseAgreement: "yes"
+    volumes:
+      data:
+        mode: "volume"
+        volume:
+          persistentVolumeClaim:
+            storageClass: "local-path"
+            accessModes:
+              - ReadWriteOnce
+            storage: "10Gi"
+      logs:
+        mode: "volume" 
+        volume:
+          persistentVolumeClaim:
+            storageClass: "local-path"
+            accessModes:
+              - ReadWriteOnce
+            storage: "5Gi"
+    services:
+      neo4j:
+        enabled: true
+        type: "ClusterIP"
+        ports:
+          http: 7474
+          bolt: 7687
+    config:
+      server.default_listen_address: "0.0.0.0"
+      server.bolt.listen_address: "0.0.0.0:7687"
+      server.http.listen_address: "0.0.0.0:7474"
+      dbms.connector.bolt.enabled: "true"
+      dbms.connector.http.enabled: "true"

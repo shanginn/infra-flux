@@ -24,6 +24,7 @@ spec:
   values:
     # Neo4j configuration
     neo4j:
+      name: "neo4j"
       # Edition: community or enterprise
       edition: "community"
       

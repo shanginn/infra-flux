@@ -23,7 +23,7 @@ spec:
       data:
         mode: "dynamic"
         dynamic:
-          storageClassName: "local-path"
+          storageClassName: "standard"
           accessModes:
             - ReadWriteOnce
           requests:
@@ -31,7 +31,7 @@ spec:
       logs:
         mode: "dynamic" 
         dynamic:
-          storageClassName: "local-path"
+          storageClassName: "standard"
           accessModes:
             - ReadWriteOnce
           requests:

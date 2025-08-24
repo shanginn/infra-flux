@@ -40,9 +40,8 @@ spec:
       neo4j:
         enabled: true
         type: "ClusterIP"
-        ports:
-          http: 7474
-          bolt: 7687
+      default:
+        enabled: true
     config:
       server.default_listen_address: "0.0.0.0"
       server.bolt.listen_address: "0.0.0.0:7687"

@@ -1,0 +1,21 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: minio-operator
+  namespace: flux-system
+spec:
+  interval: 1h
+  chart:
+    spec:
+      chart: operator
+      version: "6.0"
+      sourceRef:
+        kind: HelmRepository
+        name: minio
+        namespace: flux-system
+  targetNamespace: minio-operator
+  install:
+    createNamespace: true
+    crds: CreateReplace
+  upgrade:
+    crds: CreateReplace

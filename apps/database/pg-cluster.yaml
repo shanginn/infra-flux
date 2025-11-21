@@ -1,0 +1,42 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: main-db
+  namespace: database
+spec:
+  instances: 1
+  imageName: ghcr.io/cloudnative-pg/postgresql:17
+
+  storage:
+    size: 30Gi
+    storageClass: local-path
+
+  resources:
+    requests:
+      memory: "24Gi"
+      cpu: "6"
+    limits:
+      memory: "24Gi"
+      cpu: "12"
+
+  postgresql:
+    parameters:
+      # Memory Configuration
+      shared_buffers: "6GB"          # 25% of Limit
+      effective_cache_size: "18GB"   # 75% of Limit
+      maintenance_work_mem: "2GB"    # Speed up vacuums/index creation
+      work_mem: "128MB"              # Per-operation memory (sorts/joins)
+
+      # Checkpoints (Write Performance)
+      # Spreads out writes to disk to avoid I/O spikes
+      checkpoint_completion_target: "0.9"
+      checkpoint_timeout: "15min"
+
+      # Optimization for SSD/NVMe
+      random_page_cost: "1.1"
+      effective_io_concurrency: "200"
+
+      # Parallel Queries (Utilizing your 12 CPUs)
+      max_worker_processes: "12"
+      max_parallel_workers: "8"
+      max_parallel_workers_per_gather: "4"

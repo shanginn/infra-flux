@@ -14,8 +14,16 @@ spec:
     - servers: 1
       name: pool-0
       volumesPerServer: 1
-      size: 935Gi
-      storageClassName: hdd-local
+      volumeClaimTemplate:
+        metadata:
+          name: data
+        spec:
+          accessModes:
+            - ReadWriteOnce
+          storageClassName: hdd-local
+          resources:
+            requests:
+              storage: 935Gi
 
       resources:
         requests:

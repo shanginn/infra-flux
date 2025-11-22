@@ -33,7 +33,7 @@ spec:
           memory: "8Gi"
           cpu: "4000m"
 
-  configuration:
+  credsSecret:
     name: main-storage-env-config
   requestAutoCert: false
   features:

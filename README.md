@@ -36,3 +36,13 @@ The following secrets need to be manually created in the cluster:
     --namespace monitoring \
     --from-literal=admin-password='your-secure-password'
   ```
+  
+## Minio
+
+Нужно создать секрет с переменными окружения для Minio:
+```bash
+kubectl create secret generic main-storage-env-config \
+  --namespace storage \
+  --from-literal=config.env='export MINIO_ROOT_USER="ROOT_USERNAME"
+export MINIO_ROOT_PASSWORD="ROOT_PASSWORD"'
+```

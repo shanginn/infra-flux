@@ -46,3 +46,12 @@ kubectl create secret generic main-storage-env-config \
   --from-literal=config.env='export MINIO_ROOT_USER="ROOT_USERNAME"
 export MINIO_ROOT_PASSWORD="ROOT_PASSWORD"'
 ```
+
+### Пользователь Primerochka
+Для работы бакета `primerochka` необходимо создать секрет пользователя (остальная настройка выполняется автоматически через Job):
+```bash
+kubectl create secret generic primerochka-user \
+  --namespace storage \
+  --from-literal=CONSOLE_ACCESS_KEY=primerochka-user \
+  --from-literal=CONSOLE_SECRET_KEY='your-secure-password'
+```

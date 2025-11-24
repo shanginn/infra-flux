@@ -1,0 +1,61 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: primerochka-policy-setup
+  namespace: storage
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: mc
+          image: minio/mc:latest
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -e
+              
+              # Load admin credentials
+              if [ -f /config/config.env ]; then
+                source /config/config.env
+              else
+                echo "Config file not found!"
+                exit 1
+              fi
+
+              echo "Waiting for MinIO..."
+              until mc alias set myminio http://minio.storage.svc.cluster.local:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD"; do
+                echo "MinIO not ready, retrying..."
+                sleep 5
+              done
+
+              echo "Creating/Updating policy..."
+              cat > /tmp/policy.json <<EOF
+              {
+                "Version": "2012-10-17",
+                "Statement": [
+                  {
+                    "Effect": "Allow",
+                    "Action": ["s3:GetObject", "s3:PutObject", "s3:DeleteObject", "s3:ListBucket"],
+                    "Resource": ["arn:aws:s3:::primerochka", "arn:aws:s3:::primerochka/*"]
+                  }
+                ]
+              }
+              EOF
+
+              mc admin policy create myminio primerochka-policy /tmp/policy.json || true
+              
+              echo "Attaching policy to user..."
+              mc admin policy attach myminio primerochka-policy --user primerochka-user
+
+              echo "Done!"
+          volumeMounts:
+            - name: minio-config
+              mountPath: /config
+      volumes:
+        - name: minio-config
+          secret:
+            secretName: main-storage-env-config

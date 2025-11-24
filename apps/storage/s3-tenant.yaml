@@ -35,6 +35,10 @@ spec:
 
   configuration:
     name: main-storage-env-config
+  buckets:
+    - name: primerochka
+  users:
+    - name: primerochka-user
   requestAutoCert: true
   features:
     bucketDNS: false

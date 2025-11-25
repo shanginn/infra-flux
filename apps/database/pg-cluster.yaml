@@ -19,6 +19,15 @@ spec:
       memory: "24Gi"
       cpu: "12"
 
+  managed:
+    roles:
+      - name: temporal_user
+        ensure: present
+        login: true
+        createdb: true
+        passwordSecret:
+          name: temporal-db-user
+
   postgresql:
     parameters:
       # Memory Configuration

@@ -17,7 +17,7 @@ spec:
             - name: TEMPORAL_CLI_ADDRESS
               value: "temporal-frontend:7233"
             - name: NAMESPACES
-              value: "primerochka,genera4" # Comma separated list of namespaces
+              value: "primerochka,genera4,sistent" # Comma separated list of namespaces
           command: ["/bin/bash", "-c"]
           args:
             - |
@@ -30,7 +30,8 @@ spec:
               IFS=',' read -ra NS_LIST <<< "$NAMESPACES"
               for ns in "${NS_LIST[@]}"; do
                 echo "Registering '$ns' namespace..."
-                tctl --namespace "$ns" namespace register --retention 3 || true
+                # Try to register, ignore error if already exists
+                temporal operator namespace create --namespace "$ns" --retention 3d --address "$TEMPORAL_CLI_ADDRESS" || true
               done
               
               echo "Done!"

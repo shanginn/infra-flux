@@ -27,6 +27,12 @@ spec:
         createdb: true
         passwordSecret:
           name: temporal-db-user
+      - name: primerochka
+        ensure: present
+        login: true
+        createdb: true
+        passwordSecret:
+          name: primerochka-db-user
 
   postgresql:
     parameters:

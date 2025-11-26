@@ -77,6 +77,23 @@ kubectl create secret generic temporal-db-user \
   -n temporal
 ```
 
+### 3. Пользователь и БД для Primerochka
+Этот секрет используется CloudNativePG для создания пользователя в БД.
+Необходимо создать его в неймспейсе `database`.
+
+```bash
+kubectl create secret generic primerochka-db-user \
+  --from-literal=username=primerochka \
+  --from-literal=password='YOUR_SECURE_PASSWORD' \
+  -n database
+```
+
+Базу данных необходимо создать вручную (CloudNativePG не поддерживает декларативное создание дополнительных БД):
+
+```bash
+kubectl exec -it -n database main-db-1 -- psql -U postgres -c "CREATE DATABASE primerochka OWNER primerochka;"
+```
+
 ### 2. Basic Auth для Temporal UI (Traefik)
 Для защиты веб-интерфейса Temporal используется Basic Auth через Traefik Middleware.
 Секрет должен содержать файл `users` в формате htpasswd (сгенерировать можно через `htpasswd -nEb user password`).

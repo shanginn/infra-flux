@@ -8,7 +8,7 @@ spec:
 
   exposeServices:
     console: true # Web UI
-    minio: true   # S3 API
+    minio: false  # S3 API - accessed internally only
 
   pools:
     - servers: 1

@@ -39,6 +39,6 @@ spec:
     - name: primerochka
   users:
     - name: primerochka-user
-  requestAutoCert: true
+  requestAutoCert: false
   features:
     bucketDNS: false

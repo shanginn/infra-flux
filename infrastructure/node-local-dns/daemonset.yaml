@@ -40,7 +40,7 @@ spec:
             memory: 25Mi
           limits:
             memory: 100Mi
-        args: [ "-localip", "169.254.20.10,10.43.0.10", "-conf", "/etc/coredns/Corefile", "-upstreamsvc", "kube-dns" ]
+        args: [ "-localip", "169.254.20.10", "-conf", "/etc/coredns/Corefile", "-upstreamsvc", "kube-dns" ]
         securityContext:
           privileged: true
           capabilities:

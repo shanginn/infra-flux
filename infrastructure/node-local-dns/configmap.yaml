@@ -13,7 +13,7 @@ data:
         }
         reload
         loop
-        bind 169.254.20.10 10.43.0.10
+        bind 169.254.20.10
         forward . 10.43.0.10 {
                 force_tcp
         }
@@ -25,7 +25,7 @@ data:
         cache 30
         reload
         loop
-        bind 169.254.20.10 10.43.0.10
+        bind 169.254.20.10
         forward . 10.43.0.10 {
                 force_tcp
         }
@@ -36,7 +36,7 @@ data:
         cache 30
         reload
         loop
-        bind 169.254.20.10 10.43.0.10
+        bind 169.254.20.10
         forward . /etc/resolv.conf {
                 force_tcp
         }

@@ -11,9 +11,7 @@ data:
         ready
 
         # 1. Force immediate failure for IPv6 AAAA queries
-        template ANY AAAA {
-            rcode NXDOMAIN
-        }
+        template IN AAAA .
 
         # 2. Removed ip6.arpa support here
         kubernetes cluster.local in-addr.arpa {

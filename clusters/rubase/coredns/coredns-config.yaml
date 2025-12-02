@@ -11,7 +11,9 @@ data:
         ready
 
         # 1. Force immediate failure for IPv6 AAAA queries
-        template IN AAAA .
+        template IN AAAA . {
+           rcode NOERROR
+        }
 
         # 2. Removed ip6.arpa support here
         kubernetes cluster.local in-addr.arpa {

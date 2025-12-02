@@ -1,0 +1,46 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: coredns
+  namespace: kube-system
+data:
+  Corefile: |
+    .:53 {
+        errors
+        health
+        ready
+
+        # 1. Force immediate failure for IPv6 AAAA queries
+        template ANY AAAA {
+            rcode NXDOMAIN
+        }
+
+        # 2. Removed ip6.arpa support here
+        kubernetes cluster.local in-addr.arpa {
+          pods insecure
+          # Only fallthrough for reverse ipv4 lookups.
+          # Any other *.cluster.local query that fails here returns NXDOMAIN instantly.
+          fallthrough in-addr.arpa
+        }
+
+        hosts /etc/coredns/NodeHosts {
+          ttl 60
+          reload 15s
+          fallthrough
+        }
+
+        prometheus :9153
+
+        # 3. Use fast public DNS instead of local host /etc/resolv.conf
+        # This ensures search path failures happen in milliseconds, not seconds.
+        forward . 1.1.1.1 8.8.8.8
+
+        cache 30
+        loop
+        reload
+        loadbalance
+        import /etc/coredns/custom/*.override
+    }
+    import /etc/coredns/custom/*.server
+  NodeHosts: |
+    185.221.212.224 dedic140

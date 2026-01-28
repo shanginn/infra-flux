@@ -33,6 +33,12 @@ spec:
         createdb: true
         passwordSecret:
           name: primerochka-db-user
+      - name: vibesites
+        ensure: present
+        login: true
+        createdb: true
+        passwordSecret:
+          name: vibesites-db-user
 
   postgresql:
     parameters:

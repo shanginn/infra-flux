@@ -91,7 +91,7 @@ spec:
         - name: squid-auth
           secret:
             secretName: squid-auth
-            defaultMode: 0400
+            defaultMode: 0444
         - name: squid-cache
           emptyDir:
             sizeLimit: 1Gi

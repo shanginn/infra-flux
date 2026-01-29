@@ -18,25 +18,6 @@ spec:
     spec:
       securityContext:
         fsGroup: 13  # proxy group - ensures volumes are accessible
-      initContainers:
-        - name: init-squid
-          image: ubuntu/squid:latest
-          imagePullPolicy: IfNotPresent
-          command:
-            - /bin/sh
-            - -c
-            - |
-              # Create cache directories and set permissions
-              mkdir -p /var/spool/squid/cache
-              chown -R 13:13 /var/spool/squid
-              chmod 755 /var/spool/squid
-          volumeMounts:
-            - name: squid-cache
-              mountPath: /var/spool/squid
-            - name: squid-logs
-              mountPath: /var/log/squid
-          securityContext:
-            runAsUser: 0
       containers:
         - name: squid
           image: ubuntu/squid:latest

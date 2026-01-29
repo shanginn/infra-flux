@@ -110,22 +110,24 @@ Squid proxy разворачивается в namespace `squid-proxy` и тре�
 
 ### Создание пароля для прокси
 
-Сгенерируйте htpasswd hash (требуется пакет `apache2-utils`):
+Сгенерируйте htpasswd hash в формате **MD5** (требуется пакет `apache2-utils`):
 
 ```bash
 # Установка htpasswd если нужно (Ubuntu/Debian)
 # sudo apt-get install apache2-utils
 
-# Генерация пароля
-htpasswd -nbB username your-secure-password
+# Генерация пароля в формате MD5 (ВАЖНО: используйте -m, НЕ -B)
+htpasswd -nbm username your-secure-password
 ```
+
+**Важно:** Используйте флаг `-m` (MD5), а не `-B` (bcrypt). Squid `basic_ncsa_auth` не поддерживает bcrypt.
 
 ### Создание секрета
 
 ```bash
 kubectl create secret generic squid-auth \
   --namespace squid-proxy \
-  --from-literal=passwd='username:$2y$05$xxxxx...'
+  --from-literal=passwd='username:$apr1$xxxxx$xxxxx...'
 ```
 
 ### Использование прокси
@@ -166,3 +168,22 @@ sudo iptables -A INPUT -p tcp --dport 31128 -j ACCEPT
 - Поддерживается только безопасный набор портов (80, 443, и др.)
 - Включен NetworkPolicy для ограничения исходящих соединений
 - Рекомендуется ограничить доступ по IP в firewall хоста
+
+### Troubleshooting
+
+#### Ошибка "Cache Access Denied" или "Authentication required"
+
+Проверьте формат пароля - должен быть **MD5** (`$apr1$`), не bcrypt (`$2y$`):
+```bash
+# Правильно (MD5):
+htpasswd -nbm user pass
+# myuser:$apr1$xxxxx$xxxxx...
+
+# Неправильно (bcrypt):
+htpasswd -nbB user pass
+# myuser:$2y$05$xxxxx...
+```
+
+#### Ошибка `setuid(0): Operation not permitted`
+
+Эта ошибка в логах означает, что хелпер аутентификации не может прочитать файл паролей. Проверьте что файл смонтирован с правами 0444 (исправлено в deployment.yaml).

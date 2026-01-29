@@ -16,6 +16,8 @@ spec:
       labels:
         app: squid-proxy
     spec:
+      securityContext:
+        fsGroup: 13  # proxy group - ensures volumes are accessible
       initContainers:
         - name: init-squid
           image: ubuntu/squid:latest
@@ -28,13 +30,7 @@ spec:
               mkdir -p /var/spool/squid/cache
               chown -R 13:13 /var/spool/squid
               chmod 755 /var/spool/squid
-              # Initialize squid cache
-              /usr/sbin/squid -z -f /etc/squid/squid.conf || true
           volumeMounts:
-            - name: squid-config
-              mountPath: /etc/squid/squid.conf
-              subPath: squid.conf
-              readOnly: true
             - name: squid-cache
               mountPath: /var/spool/squid
             - name: squid-logs
@@ -85,7 +81,6 @@ spec:
             runAsNonRoot: true
             runAsUser: 13  # proxy user
             runAsGroup: 13
-            fsGroup: 13
             capabilities:
               drop:
                 - ALL

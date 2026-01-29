@@ -9,6 +9,9 @@ data:
     # Basic configuration
     http_port 3128
     
+    # PID file location (must be writable)
+    pid_filename /var/spool/squid/squid.pid
+    
     # Logging
     access_log stdio:/var/log/squid/access.log squid
     cache_log /var/log/squid/cache.log
@@ -18,15 +21,10 @@ data:
     maximum_object_size 512 MB
     cache_mem 256 MB
     
-    # DNS
-    dns_v4_first on
-    
-    # ACL Definitions
+    # ACL Definitions (IPv4 only)
     acl localnet src 10.0.0.0/8
     acl localnet src 172.16.0.0/12
     acl localnet src 192.168.0.0/16
-    acl localnet src fc00::/7
-    acl localnet src fe80::/10
     
     # Safe ports
     acl Safe_ports port 80
@@ -78,11 +76,10 @@ data:
     refresh_pattern -i (/cgi-bin/|\?) 0     0%      0
     refresh_pattern .               0       20%     4320
     
-    # Performance tuning
+    # Performance tuning - Via header is required by HTTP spec
     forwarded_for delete
-    via off
+    via on
     
     # Security headers
     request_header_access X-Forwarded-For deny all
-    request_header_access Via deny all
     request_header_access Cache-Control allow all

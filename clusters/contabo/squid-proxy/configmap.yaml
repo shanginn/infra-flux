@@ -1,0 +1,88 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: squid-config
+  namespace: squid-proxy
+data:
+  squid.conf: |
+    # Basic configuration
+    http_port 3128
+    
+    # Logging
+    access_log stdio:/var/log/squid/access.log squid
+    cache_log /var/log/squid/cache.log
+    
+    # Cache settings
+    cache_dir ufs /var/spool/squid 100 16 256
+    maximum_object_size 512 MB
+    cache_mem 256 MB
+    
+    # DNS
+    dns_v4_first on
+    
+    # ACL Definitions
+    acl localnet src 10.0.0.0/8
+    acl localnet src 172.16.0.0/12
+    acl localnet src 192.168.0.0/16
+    acl localnet src fc00::/7
+    acl localnet src fe80::/10
+    
+    # Safe ports
+    acl Safe_ports port 80
+    acl Safe_ports port 21
+    acl Safe_ports port 443
+    acl Safe_ports port 70
+    acl Safe_ports port 210
+    acl Safe_ports port 1025-65535
+    acl Safe_ports port 280
+    acl Safe_ports port 488
+    acl Safe_ports port 591
+    acl Safe_ports port 777
+    acl Safe_ports port 6443
+    
+    # SSL ports
+    acl SSL_ports port 443
+    acl SSL_ports port 6443
+    
+    # Authentication
+    auth_param basic program /usr/lib/squid/basic_ncsa_auth /etc/squid/passwd
+    auth_param basic children 5
+    auth_param basic realm Squid Proxy
+    auth_param basic credentialsttl 2 hours
+    auth_param basic casesensitive off
+    
+    # ACL for authenticated users
+    acl authenticated proxy_auth REQUIRED
+    
+    # Deny requests to certain ports
+    http_access deny !Safe_ports
+    
+    # Deny CONNECT to non-SSL ports
+    http_access deny CONNECT !SSL_ports
+    
+    # Allow localhost
+    http_access allow localhost manager
+    http_access deny manager
+    
+    # Allow authenticated users from localnet
+    http_access allow authenticated localnet
+    http_access allow authenticated
+    
+    # Deny all other access
+    http_access deny all
+    
+    # Refresh patterns
+    refresh_pattern ^ftp:           1440    20%     10080
+    refresh_pattern ^gopher:        1440    0%      1440
+    refresh_pattern -i (/cgi-bin/|\?) 0     0%      0
+    refresh_pattern .               0       20%     4320
+    
+    # Performance tuning
+    forwarded_for delete
+    via off
+    
+    # Security headers
+    request_header_access X-Forwarded-For deny all
+    request_header_access Via deny all
+    request_header_access Cache-Control allow all

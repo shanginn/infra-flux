@@ -103,3 +103,66 @@ kubectl create secret generic temporal-basic-auth \
   --from-literal=users='admin:$apr1$r4H2C8k6$D1/...' \
   -n kube-system
 ```
+
+## Squid Proxy
+
+Squid proxy разворачивается в namespace `squid-proxy` и требует создания секрета с аутентификацией.
+
+### Создание пароля для прокси
+
+Сгенерируйте htpasswd hash (требуется пакет `apache2-utils`):
+
+```bash
+# Установка htpasswd если нужно (Ubuntu/Debian)
+# sudo apt-get install apache2-utils
+
+# Генерация пароля
+htpasswd -nbB username your-secure-password
+```
+
+### Создание секрета
+
+```bash
+kubectl create secret generic squid-auth \
+  --namespace squid-proxy \
+  --from-literal=passwd='username:$2y$05$xxxxx...'
+```
+
+### Использование прокси
+
+#### Внутри кластера
+- Адрес: `squid-proxy.squid-proxy.svc.cluster.local:3128`
+- Аутентификация: Basic Auth с созданным пользователем
+
+```bash
+export http_proxy=http://username:password@squid-proxy.squid-proxy.svc.cluster.local:3128
+export https_proxy=http://username:password@squid-proxy.squid-proxy.svc.cluster.local:3128
+```
+
+#### Вне кластера (NodePort)
+
+Прокси доступен через NodePort на порту **31128** на любом узле кластера:
+
+```bash
+# Замените <node-ip> на IP-адрес одного из узлов вашего кластера
+export http_proxy=http://username:password@<node-ip>:31128
+export https_proxy=http://username:password@<node-ip>:31128
+```
+
+**Примечание:** Contabo не предоставляет нативную поддержку LoadBalancer для Kubernetes (в отличие от AWS/GCP/Azure), поэтому используется NodePort. Это стандартная практика для bare-metal/VPS кластеров.
+
+**Важно:** Убедитесь, что порт 31128 открыт в firewall вашего сервера Contabo:
+```bash
+# Пример для UFW
+sudo ufw allow 31128/tcp
+
+# Или для iptables
+sudo iptables -A INPUT -p tcp --dport 31128 -j ACCEPT
+```
+
+### Безопасность
+
+- Прокси требует аутентификации (Basic Auth)
+- Поддерживается только безопасный набор портов (80, 443, и др.)
+- Включен NetworkPolicy для ограничения исходящих соединений
+- Рекомендуется ограничить доступ по IP в firewall хоста

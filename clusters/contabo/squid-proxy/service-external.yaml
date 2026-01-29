@@ -1,0 +1,21 @@
+---
+# External access via NodePort
+# Squid proxy will be available on <node-ip>:31128
+# Note: Contabo doesn't provide native LoadBalancer support, so NodePort is used
+apiVersion: v1
+kind: Service
+metadata:
+  name: squid-proxy-external
+  namespace: squid-proxy
+  labels:
+    app: squid-proxy
+spec:
+  type: NodePort
+  ports:
+    - port: 3128
+      targetPort: 3128
+      nodePort: 31128
+      protocol: TCP
+      name: http
+  selector:
+    app: squid-proxy

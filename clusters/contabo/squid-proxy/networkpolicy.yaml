@@ -1,0 +1,39 @@
+---
+# NetworkPolicy to restrict access to Squid proxy
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: squid-proxy-netpol
+  namespace: squid-proxy
+spec:
+  podSelector:
+    matchLabels:
+      app: squid-proxy
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow access from anywhere on the proxy port
+    # (Squid's own authentication handles security)
+    - from: []
+      ports:
+        - protocol: TCP
+          port: 3128
+  egress:
+    # Allow Squid to connect to external destinations
+    - to: []
+      ports:
+        # HTTP
+        - protocol: TCP
+          port: 80
+        # HTTPS
+        - protocol: TCP
+          port: 443
+        # Alternative HTTPS
+        - protocol: TCP
+          port: 8443
+        # Other common ports
+        - protocol: TCP
+          port: 8080
+        - protocol: TCP
+          port: 6443

@@ -32,6 +32,14 @@ spec:
                 sleep 5
               done
 
+              # Create user if doesn't exist
+              if ! mc admin user info myminio "$USER_NAME" >/dev/null 2>&1; then
+                echo "Creating user $USER_NAME..."
+                mc admin user add myminio "$USER_NAME" "$USER_PASSWORD"
+              else
+                echo "User $USER_NAME already exists."
+              fi
+
               echo "Creating/Updating policy..."
               cat > /tmp/policy.json <<EOF
               {
@@ -49,9 +57,20 @@ spec:
               mc admin policy create myminio vibesites-policy /tmp/policy.json || true
               
               echo "Attaching policy to user..."
-              mc admin policy attach myminio vibesites-policy --user vibesites-user
+              mc admin policy attach myminio vibesites-policy --user "$USER_NAME"
 
               echo "Done!"
+          env:
+            - name: USER_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: vibesites-user
+                  key: CONSOLE_ACCESS_KEY
+            - name: USER_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: vibesites-user
+                  key: CONSOLE_SECRET_KEY
           volumeMounts:
             - name: minio-config
               mountPath: /config

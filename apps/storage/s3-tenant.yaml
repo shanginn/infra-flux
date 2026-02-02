@@ -37,8 +37,10 @@ spec:
     name: main-storage-env-config
   buckets:
     - name: primerochka
+    - name: vibesites
   users:
     - name: primerochka-user
+    - name: vibesites-user
   requestAutoCert: false
   features:
     bucketDNS: false

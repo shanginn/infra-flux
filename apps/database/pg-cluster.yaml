@@ -3,8 +3,8 @@ kind: Cluster
 metadata:
   name: main-db
   namespace: database
-annotations:
-  revision: "2" # Increment on config changes to trigger rolling updates
+  annotations:
+    revision: "2" # Increment on config changes to trigger rolling updates
 spec:
   instances: 1
   imageName: ghcr.io/cloudnative-pg/postgresql:18

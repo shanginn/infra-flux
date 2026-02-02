@@ -27,7 +27,7 @@ spec:
               fi
 
               echo "Waiting for MinIO..."
-              until mc alias set myminio https://minio.storage.svc.cluster.local "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" --insecure; do
+              until mc alias set myminio http://minio.storage.svc.cluster.local "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" --insecure; do
                 echo "MinIO not ready, retrying..."
                 sleep 5
               done

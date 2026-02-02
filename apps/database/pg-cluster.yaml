@@ -39,6 +39,12 @@ spec:
         createdb: true
         passwordSecret:
           name: vibesites-db-user
+      - name: flowerswork
+        ensure: present
+        login: true
+        createdb: true
+        passwordSecret:
+          name: flowerswork-db-user
 
   postgresql:
     parameters:

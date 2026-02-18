@@ -38,9 +38,11 @@ spec:
   buckets:
     - name: primerochka
     - name: vibesites
+    - name: restavrach
   users:
     - name: primerochka-user
     - name: vibesites-user
+    - name: restavrach-user
   requestAutoCert: false
   features:
     bucketDNS: false

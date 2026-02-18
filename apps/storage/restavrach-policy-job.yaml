@@ -1,0 +1,80 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: restavrach-policy-setup
+  namespace: storage
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: mc
+          image: minio/mc:latest
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -e
+              
+              # Load admin credentials
+              if [ -f /config/config.env ]; then
+                source /config/config.env
+              else
+                echo "Config file not found!"
+                exit 1
+              fi
+
+              echo "Waiting for MinIO..."
+              until mc alias set myminio http://minio.storage.svc.cluster.local "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" --insecure; do
+                echo "MinIO not ready, retrying..."
+                sleep 5
+              done
+
+              # Create user if doesn't exist
+              if ! mc admin user info myminio "$USER_NAME" >/dev/null 2>&1; then
+                echo "Creating user $USER_NAME..."
+                mc admin user add myminio "$USER_NAME" "$USER_PASSWORD"
+              else
+                echo "User $USER_NAME already exists."
+              fi
+
+              echo "Creating/Updating policy..."
+              cat > /tmp/policy.json <<EOF
+              {
+                "Version": "2012-10-17",
+                "Statement": [
+                  {
+                    "Effect": "Allow",
+                    "Action": ["s3:GetObject", "s3:PutObject", "s3:DeleteObject", "s3:ListBucket"],
+                    "Resource": ["arn:aws:s3:::restavrach", "arn:aws:s3:::restavrach/*"]
+                  }
+                ]
+              }
+              EOF
+
+              mc admin policy create myminio restavrach-policy /tmp/policy.json || true
+              
+              echo "Attaching policy to user..."
+              mc admin policy attach myminio restavrach-policy --user "$USER_NAME"
+
+              echo "Done!"
+          env:
+            - name: USER_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: restavrach-user
+                  key: CONSOLE_ACCESS_KEY
+            - name: USER_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: restavrach-user
+                  key: CONSOLE_SECRET_KEY
+          volumeMounts:
+            - name: minio-config
+              mountPath: /config
+      volumes:
+        - name: minio-config
+          secret:
+            secretName: main-storage-env-config

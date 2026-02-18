@@ -4,7 +4,7 @@ metadata:
   name: main-db
   namespace: database
   annotations:
-    revision: "2" # Increment on config changes to trigger rolling updates
+    revision: "3" # Increment on config changes to trigger rolling updates
 spec:
   instances: 1
   imageName: ghcr.io/cloudnative-pg/postgresql:18
@@ -47,6 +47,12 @@ spec:
         createdb: true
         passwordSecret:
           name: flowerswork-db-user
+      - name: restavrach
+        ensure: present
+        login: true
+        createdb: true
+        passwordSecret:
+          name: restavrach-db-user
 
   postgresql:
     parameters:

@@ -9,3 +9,5 @@ spec:
     providers:
       kubernetesCRD:
         allowCrossNamespace: true
+      kubernetesIngress: {}
+      kubernetesService: {}

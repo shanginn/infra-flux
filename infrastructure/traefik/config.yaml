@@ -8,6 +8,9 @@ spec:
   valuesContent: |-
     providers:
       kubernetesCRD:
+        enabled: true
         allowCrossNamespace: true
-      kubernetesIngress: {}
-      kubernetesService: {}
+      kubernetesIngress:
+        enabled: true
+      kubernetesService:
+        enabled: true

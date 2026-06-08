@@ -1,0 +1,64 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: teamspeak
+  namespace: teamspeak
+  labels:
+    app.kubernetes.io/name: teamspeak
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: teamspeak
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: teamspeak
+    spec:
+      containers:
+        - name: teamspeak
+          image: teamspeak:3.13.8@sha256:11fb1dd03c68ae7b3a8a86c5a08827d01d87a833177ad92ee5c19d7b72d08ce0
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: TS3SERVER_LICENSE
+              value: accept
+          ports:
+            - name: voice
+              containerPort: 9987
+              protocol: UDP
+            - name: query
+              containerPort: 10011
+              protocol: TCP
+            - name: filetransfer
+              containerPort: 30033
+              protocol: TCP
+          readinessProbe:
+            tcpSocket:
+              port: filetransfer
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 6
+          livenessProbe:
+            tcpSocket:
+              port: filetransfer
+            initialDelaySeconds: 60
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          volumeMounts:
+            - name: data
+              mountPath: /var/ts3server
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: teamspeak-data

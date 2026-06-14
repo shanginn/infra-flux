@@ -4,7 +4,7 @@ metadata:
   name: teamspeak
   namespace: teamspeak
   annotations:
-    kustomize.toolkit.fluxcd.io/prune: disabled
+    kustomize.toolkit.fluxcd.io/prune: enabled
   labels:
     app.kubernetes.io/name: teamspeak
 spec:

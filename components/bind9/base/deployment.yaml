@@ -1,0 +1,98 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bind9-deployment
+  labels:
+    app: bind9
+    app.kubernetes.io/instance: bind9
+    app.kubernetes.io/name: bind9
+    app.kubernetes.io/part-of: bind9
+    app.kubernetes.io/version: "1.0.0"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: bind9
+      app.kubernetes.io/instance: bind9
+      app.kubernetes.io/name: bind9
+  template:
+    metadata:
+      labels:
+        app: bind9
+        app.kubernetes.io/instance: bind9
+        app.kubernetes.io/name: bind9
+    spec:
+      securityContext:
+        fsGroup: 53
+        fsGroupChangePolicy: OnRootMismatch
+      automountServiceAccountToken: false
+      containers:
+        - name: bind9
+          image: internetsystemsconsortium/bind9:9.20
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: KUBERNETES_CLUSTER_DOMAIN
+              value: cluster.local
+          ports:
+            - containerPort: 53
+              name: bind9tcp
+              protocol: TCP
+            - containerPort: 53
+              name: bind9udp
+              protocol: UDP
+          readinessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - nslookup -type=soa shanginn.io 127.0.0.1 >/dev/null 2>&1
+            initialDelaySeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - nslookup -type=soa shanginn.io 127.0.0.1 >/dev/null 2>&1
+            initialDelaySeconds: 30
+            timeoutSeconds: 5
+          resources: {}
+          volumeMounts:
+            - mountPath: /etc/bind/named.conf
+              name: configs-volume
+              readOnly: true
+              subPath: named.conf
+            - mountPath: /etc/bind/named.conf.acl
+              name: configs-volume
+              readOnly: true
+              subPath: named.conf.acl
+            - mountPath: /etc/bind/named.conf.local
+              name: configs-volume
+              readOnly: true
+              subPath: named.conf.local
+            - mountPath: /etc/bind/named.conf.options
+              name: configs-volume
+              readOnly: true
+              subPath: named.conf.options
+            - mountPath: /etc/bind/zones
+              name: zones-volume
+              readOnly: true
+            - mountPath: /var/cache/bind
+              name: cache-volume
+            - mountPath: /var/lib/bind
+              name: lib-volume
+            - mountPath: /var/log/bind
+              name: log-volume
+      volumes:
+        - name: configs-volume
+          configMap:
+            name: bind9-configs
+        - name: zones-volume
+          configMap:
+            name: bind9-zones
+        - name: cache-volume
+          emptyDir: {}
+        - name: lib-volume
+          emptyDir: {}
+        - name: log-volume
+          emptyDir: {}

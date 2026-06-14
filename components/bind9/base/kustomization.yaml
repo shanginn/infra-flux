@@ -1,0 +1,45 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: bind9
+
+resources:
+  - namespace.yaml
+  - deployment.yaml
+  - service.yaml
+
+configMapGenerator:
+  - name: bind9-configs
+    files:
+      - named.conf=configs/named.conf
+      - named.conf.acl=configs/named.conf.acl
+      - named.conf.local=configs/named.conf.local
+      - named.conf.options=configs/named.conf.options
+  - name: bind9-zones
+    files:
+      - aufstaff.ru=configs/zones/aufstaff.ru
+      - dorogoidnevnik.rf=configs/zones/dorogoidnevnik.rf
+      - flowerswork.ru=configs/zones/flowerswork.ru
+      - flowerworks.ru=configs/zones/flowerworks.ru
+      - generach.rf=configs/zones/generach.rf
+      - generach.ru=configs/zones/generach.ru
+      - itaisolutions.ru=configs/zones/itaisolutions.ru
+      - minijurnal.rf=configs/zones/minijurnal.rf
+      - mystaro.ru=configs/zones/mystaro.ru
+      - primerochka.rf=configs/zones/primerochka.rf
+      - restavrach.rf=configs/zones/restavrach.rf
+      - shanghaiauto.ru=configs/zones/shanghaiauto.ru
+      - shanginn.io=configs/zones/shanginn.io
+      - shanginn.ru=configs/zones/shanginn.ru
+      - sistent.rf=configs/zones/sistent.rf
+      - sistent.ru=configs/zones/sistent.ru
+      - udaleniefona.rf=configs/zones/udaleniefona.rf
+      - udalitfon.rf=configs/zones/udalitfon.rf
+      - vibesites.rf=configs/zones/vibesites.rf
+      - vibesites.ru=configs/zones/vibesites.ru
+
+generatorOptions:
+  labels:
+    app: bind9
+    app.kubernetes.io/instance: bind9
+    app.kubernetes.io/name: bind9
+    app.kubernetes.io/part-of: bind9

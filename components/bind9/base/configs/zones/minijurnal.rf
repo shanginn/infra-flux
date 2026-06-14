@@ -1,0 +1,20 @@
+$TTL 24H
+@     IN  SOA @       hostmaster.xn--80alfarbic0a3a.xn--p1ai. (
+  3   ; serial
+  3H  ; refresh
+  1H  ; retry
+  1W  ; expire
+  3H )    ; minimum
+
+; Specify the nameserver
+@     IN  NS          ns1.shanginn.io.
+@     IN  NS          ns2.shanginn.io.
+
+@     IN  A           84.247.177.201
+
+;Reverse lookup for Name Server
+10    IN  PTR         ns1.shanginn.io.
+
+;PTR Record IP address to HostName
+100   IN  PTR         www.xn--80alfarbic0a3a.xn--p1ai.
+150   IN  PTR         mail.xn--80alfarbic0a3a.xn--p1ai.

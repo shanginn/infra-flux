@@ -3,6 +3,8 @@ kind: PersistentVolumeClaim
 metadata:
   name: teamspeak-data
   namespace: teamspeak
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
 spec:
   accessModes:
     - ReadWriteOnce

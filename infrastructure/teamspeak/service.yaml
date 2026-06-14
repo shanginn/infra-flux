@@ -3,6 +3,8 @@ kind: Service
 metadata:
   name: teamspeak
   namespace: teamspeak
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
 spec:
   type: LoadBalancer
   externalTrafficPolicy: Local
@@ -23,6 +25,8 @@ kind: Service
 metadata:
   name: teamspeak-query
   namespace: teamspeak
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
 spec:
   type: ClusterIP
   selector:

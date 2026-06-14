@@ -3,6 +3,8 @@ kind: Deployment
 metadata:
   name: teamspeak
   namespace: teamspeak
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
   labels:
     app.kubernetes.io/name: teamspeak
 spec:

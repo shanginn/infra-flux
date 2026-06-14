@@ -5,4 +5,4 @@ resources:
   - ../../../components/bind9/base
 
 patches:
-  - path: service-loadbalancer-patch.yaml
+  - path: service-external-ip-patch.yaml

@@ -4,8 +4,9 @@ metadata:
   name: bind9-service
   namespace: bind9
 spec:
-  type: LoadBalancer
-  externalTrafficPolicy: Local
+  type: ClusterIP
+  externalIPs:
+    - 185.221.212.224
   ports:
     - name: bind9tcp
       port: 53

@@ -45,7 +45,7 @@ spec:
               command:
                 - /bin/sh
                 - -c
-                - nslookup -type=soa shanginn.io 127.0.0.1 >/dev/null 2>&1
+                - nslookup -type=soa shanginn.io. 127.0.0.1 >/dev/null 2>&1
             initialDelaySeconds: 10
             timeoutSeconds: 5
           livenessProbe:
@@ -53,7 +53,7 @@ spec:
               command:
                 - /bin/sh
                 - -c
-                - nslookup -type=soa shanginn.io 127.0.0.1 >/dev/null 2>&1
+                - nslookup -type=soa shanginn.io. 127.0.0.1 >/dev/null 2>&1
             initialDelaySeconds: 30
             timeoutSeconds: 5
           resources: {}

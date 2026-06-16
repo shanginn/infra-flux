@@ -10,6 +10,23 @@ spec:
   dependsOn:
     - name: hardware
     - name: infrastructure
+  patches:
+    - target:
+        group: helm.toolkit.fluxcd.io
+        version: v2
+        kind: HelmRelease
+        name: temporal
+        namespace: temporal
+      patch: |
+        - op: replace
+          path: /spec/values/web/ingress/hosts/0
+          value: temporal.rubase.shanginn.io
+        - op: replace
+          path: /spec/values/web/ingress/tls/0/hosts/0
+          value: temporal.rubase.shanginn.io
+        - op: replace
+          path: /spec/values/web/ingress/annotations/traefik.ingress.kubernetes.io~1router.middlewares
+          value: kube-system-temporal-rate-limit@kubernetescrd,kube-system-temporal-basic-auth@kubernetescrd
   sourceRef:
     kind: GitRepository
     name: flux-system

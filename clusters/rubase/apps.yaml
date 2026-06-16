@@ -26,7 +26,7 @@ spec:
           value: temporal.rubase.shanginn.io
         - op: replace
           path: /spec/values/web/ingress/annotations/traefik.ingress.kubernetes.io~1router.middlewares
-          value: kube-system-temporal-redirect-https@kubernetescrd,kube-system-temporal-rate-limit@kubernetescrd,kube-system-temporal-basic-auth@kubernetescrd
+          value: kube-system-temporal-redirect-https@kubernetescrd,kube-system-temporal-basic-auth@kubernetescrd
   sourceRef:
     kind: GitRepository
     name: flux-system

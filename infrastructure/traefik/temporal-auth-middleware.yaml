@@ -10,10 +10,20 @@ spec:
 apiVersion: traefik.io/v1alpha1
 kind: Middleware
 metadata:
+  name: temporal-redirect-https
+  namespace: kube-system
+spec:
+  redirectScheme:
+    scheme: https
+    permanent: true
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
   name: temporal-rate-limit
   namespace: kube-system
 spec:
   rateLimit:
-    average: 30
-    burst: 60
+    average: 60
+    burst: 120
     period: 1m

@@ -6,3 +6,7 @@ resources:
 
 patches:
   - path: service-nodeport-patch.yaml
+  - path: bind9-configs-secondary-patch.yaml
+    target:
+      kind: ConfigMap
+      name: bind9-configs

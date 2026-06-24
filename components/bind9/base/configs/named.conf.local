@@ -87,7 +87,12 @@ zone "itaisolutions.ru" IN {
 zone "vibesites.ru" IN {
     type master;
     file "/etc/bind/zones/vibesites.ru";
-    allow-update { none; };
+    journal "/var/lib/bind/vibesites.ru.jnl";
+    allow-transfer { 84.247.177.201; };
+    also-notify { 84.247.177.201; };
+    update-policy {
+        grant cert-manager name _acme-challenge.vibesites.ru. TXT;
+    };
 };
 
 zone "xn--80aacc0bc7ayl4g.xn--p1ai" IN {

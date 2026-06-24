@@ -1,0 +1,133 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: bind9-configs
+data:
+  named.conf.local: |
+    //
+    // Do any local configuration here
+    //
+
+    // Consider adding the 1918 zones here, if they are not used in your
+    // organization
+    //include "/etc/bind/zones.rfc1918";
+
+    zone "shanginn.ru" IN {
+        type master;
+        file "/etc/bind/zones/shanginn.ru";
+        allow-update { none; };
+    };
+
+    zone "shanginn.io" IN {
+        type master;
+        file "/etc/bind/zones/shanginn.io";
+        allow-update { none; };
+    };
+
+    zone "xn--80alfarbic0a3a.xn--p1ai" IN {
+        type master;
+        file "/etc/bind/zones/minijurnal.rf";
+        allow-update { none; };
+    };
+
+    zone "xn--b1abcbftdmxceabz.xn--p1ai" IN {
+        type master;
+        file "/etc/bind/zones/dorogoidnevnik.rf";
+        allow-update { none; };
+    };
+
+    zone "xn--80afga3bt4c.xn--p1ai" IN {
+        type master;
+        file "/etc/bind/zones/generach.rf";
+        allow-update { none; };
+    };
+
+    zone "generach.ru" IN {
+        type master;
+        file "/etc/bind/zones/generach.ru";
+        allow-update { none; };
+    };
+
+    zone "xn--e1afqnbgc.xn--p1ai" IN {
+        type master;
+        file "/etc/bind/zones/sistent.rf";
+        allow-update { none; };
+    };
+
+    zone "sistent.ru" IN {
+        type master;
+        file "/etc/bind/zones/sistent.ru";
+        allow-update { none; };
+    };
+
+    zone "xn--80ahnllf1ado3f.xn--p1ai" IN {
+        type master;
+        file "/etc/bind/zones/udalitfon.rf";
+        allow-update { none; };
+    };
+
+    zone "xn--80aakfartrcj1ct.xn--p1ai" IN {
+        type master;
+        file "/etc/bind/zones/udaleniefona.rf";
+        allow-update { none; };
+    };
+
+    zone "mystaro.ru" IN {
+        type master;
+        file "/etc/bind/zones/mystaro.ru";
+        allow-update { none; };
+    };
+
+    zone "xn--80ajijindid5e.xn--p1ai" IN {
+        type master;
+        file "/etc/bind/zones/primerochka.rf";
+        allow-update { none; };
+    };
+
+    zone "itaisolutions.ru" IN {
+        type master;
+        file "/etc/bind/zones/itaisolutions.ru";
+        allow-update { none; };
+    };
+
+    zone "vibesites.ru" IN {
+        type slave;
+        file "/var/lib/bind/vibesites.ru";
+        primaries { 185.221.212.224; };
+    };
+
+    zone "xn--80aacc0bc7ayl4g.xn--p1ai" IN {
+        type master;
+        file "/etc/bind/zones/vibesites.rf";
+        allow-update { none; };
+    };
+
+    zone "flowerswork.ru" IN {
+        type master;
+        file "/etc/bind/zones/flowerswork.ru";
+        allow-update { none; };
+    };
+
+    zone "flowerworks.ru" IN {
+        type master;
+        file "/etc/bind/zones/flowerworks.ru";
+        allow-update { none; };
+    };
+
+    zone "xn--80aafk8cdei3c.xn--p1ai" IN {
+        type master;
+        file "/etc/bind/zones/restavrach.rf";
+        allow-update { none; };
+    };
+
+    zone "shanghaiauto.ru" IN {
+        type master;
+        file "/etc/bind/zones/shanghaiauto.ru";
+        allow-update { none; };
+    };
+
+    zone "aufstaff.ru" IN {
+        type master;
+        file "/etc/bind/zones/aufstaff.ru";
+        allow-update { none; };
+    };

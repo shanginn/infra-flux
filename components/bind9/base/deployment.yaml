@@ -66,6 +66,10 @@ spec:
               name: configs-volume
               readOnly: true
               subPath: named.conf.acl
+            - mountPath: /etc/bind/named.conf.key
+              name: rfc2136-key-volume
+              readOnly: true
+              subPath: named.conf.key
             - mountPath: /etc/bind/named.conf.local
               name: configs-volume
               readOnly: true
@@ -90,6 +94,9 @@ spec:
         - name: zones-volume
           configMap:
             name: bind9-zones
+        - name: rfc2136-key-volume
+          secret:
+            secretName: bind9-rfc2136-key
         - name: cache-volume
           emptyDir: {}
         - name: lib-volume

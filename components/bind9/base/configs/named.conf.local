@@ -88,7 +88,7 @@ zone "vibesites.ru" IN {
     type master;
     file "/etc/bind/zones/vibesites.ru";
     journal "/var/lib/bind/vibesites.ru.jnl";
-    allow-transfer { 84.247.177.201; };
+    allow-transfer { 84.247.177.201; 10.0.0.0/8; };
     also-notify { 84.247.177.201; };
     update-policy {
         grant cert-manager name _acme-challenge.vibesites.ru. TXT;

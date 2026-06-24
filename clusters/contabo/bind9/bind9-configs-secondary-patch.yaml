@@ -94,6 +94,7 @@ data:
         type slave;
         file "/var/lib/bind/vibesites.ru";
         primaries { 185.221.212.224; };
+        allow-notify { 185.221.212.224; 10.0.0.0/8; };
     };
 
     zone "xn--80aacc0bc7ayl4g.xn--p1ai" IN {

@@ -104,14 +104,14 @@ kubectl create secret generic vibesites-db-user \
   -n database
 
 kubectl create secret generic vibesites-pi-db \
-  --from-literal=DATABASE_URL='postgres://vibesites:YOUR_SECURE_PASSWORD@main-db-rw.database.svc.cluster.local:5432/vibesites' \
+  --from-literal=DATABASE_URL='postgres://vibesites:YOUR_SECURE_PASSWORD@main-db-rw.database.svc.cluster.local:5432/vibesites_pi' \
   -n vibesites-pi
 ```
 
 Базу данных необходимо создать вручную (CloudNativePG не поддерживает декларативное создание дополнительных БД):
 
 ```bash
-kubectl exec -it -n database main-db-1 -- psql -U postgres -c "CREATE DATABASE vibesites OWNER vibesites;"
+kubectl exec -it -n database main-db-1 -- psql -U postgres -c "CREATE DATABASE vibesites_pi OWNER vibesites;"
 ```
 
 ### 2. Basic Auth для Temporal UI (Traefik)

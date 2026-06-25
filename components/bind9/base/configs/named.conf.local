@@ -99,6 +99,8 @@ zone "xn--80aacc0bc7ayl4g.xn--p1ai" IN {
     type master;
     file "/etc/bind/zones/vibesites.rf";
     journal "/var/lib/bind/vibesites.rf.jnl";
+    allow-transfer { 84.247.177.201; 10.0.0.0/8; };
+    also-notify { 84.247.177.201; };
     update-policy {
         grant cert-manager name _acme-challenge.xn--80aacc0bc7ayl4g.xn--p1ai. TXT;
     };

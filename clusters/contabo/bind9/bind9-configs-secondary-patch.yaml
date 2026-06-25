@@ -98,9 +98,10 @@ data:
     };
 
     zone "xn--80aacc0bc7ayl4g.xn--p1ai" IN {
-        type master;
-        file "/etc/bind/zones/vibesites.rf";
-        allow-update { none; };
+        type slave;
+        file "/var/lib/bind/vibesites.rf";
+        primaries { 185.221.212.224; };
+        allow-notify { 185.221.212.224; 10.0.0.0/8; };
     };
 
     zone "flowerswork.ru" IN {

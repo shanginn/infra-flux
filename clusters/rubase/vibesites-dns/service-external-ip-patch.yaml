@@ -1,7 +1,7 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: vibesites-dnsdist-test
+  name: vibesites-dnsdist
   namespace: vibesites-dns
 spec:
   type: ClusterIP
@@ -9,10 +9,10 @@ spec:
     - 185.221.212.224
   ports:
     - name: dns-tcp
-      port: 53053
+      port: 53
       protocol: TCP
       targetPort: dns-tcp
     - name: dns-udp
-      port: 53053
+      port: 53
       protocol: UDP
       targetPort: dns-udp

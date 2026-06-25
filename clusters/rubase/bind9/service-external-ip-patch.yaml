@@ -5,8 +5,6 @@ metadata:
   namespace: bind9
 spec:
   type: ClusterIP
-  externalIPs:
-    - 185.221.212.224
   ports:
     - name: bind9tcp
       port: 53

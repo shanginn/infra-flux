@@ -99,6 +99,21 @@ spec:
       port: 53
       protocol: UDP
       targetPort: dns-udp
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vibesites-dnsdist-metrics
+  labels:
+    app: dnsdist
+    app.kubernetes.io/name: dnsdist
+    app.kubernetes.io/part-of: vibesites-dns
+spec:
+  type: ClusterIP
+  selector:
+    app: dnsdist
+    app.kubernetes.io/name: dnsdist
+  ports:
     - name: metrics
       port: 8083
       protocol: TCP

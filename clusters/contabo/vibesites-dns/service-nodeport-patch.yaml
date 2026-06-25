@@ -1,18 +1,18 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: vibesites-dnsdist-test
+  name: vibesites-dnsdist
   namespace: vibesites-dns
 spec:
   type: NodePort
   ports:
     - name: dns-tcp
-      nodePort: 30054
-      port: 53053
+      nodePort: 30053
+      port: 53
       protocol: TCP
       targetPort: dns-tcp
     - name: dns-udp
-      nodePort: 30054
-      port: 53053
+      nodePort: 30053
+      port: 53
       protocol: UDP
       targetPort: dns-udp

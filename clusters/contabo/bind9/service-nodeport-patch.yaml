@@ -4,15 +4,13 @@ metadata:
   name: bind9-service
   namespace: bind9
 spec:
-  type: NodePort
+  type: ClusterIP
   ports:
     - name: bind9tcp
-      nodePort: 30053
       port: 53
       protocol: TCP
       targetPort: bind9tcp
     - name: bind9udp
-      nodePort: 30053
       port: 53
       protocol: UDP
       targetPort: bind9udp

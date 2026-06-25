@@ -94,6 +94,26 @@ kubectl create secret generic primerochka-db-user \
 kubectl exec -it -n database main-db-1 -- psql -U postgres -c "CREATE DATABASE primerochka OWNER primerochka;"
 ```
 
+### 4. Пользователь и БД для Vibesites
+Этот секрет используется CloudNativePG для создания пользователя в БД. Отдельный секрет в `vibesites-pi` используется приложением, потому что Kubernetes Secret доступен только внутри своего namespace.
+
+```bash
+kubectl create secret generic vibesites-db-user \
+  --from-literal=username=vibesites \
+  --from-literal=password='YOUR_SECURE_PASSWORD' \
+  -n database
+
+kubectl create secret generic vibesites-pi-db \
+  --from-literal=DATABASE_URL='postgres://vibesites:YOUR_SECURE_PASSWORD@main-db-rw.database.svc.cluster.local:5432/vibesites' \
+  -n vibesites-pi
+```
+
+Базу данных необходимо создать вручную (CloudNativePG не поддерживает декларативное создание дополнительных БД):
+
+```bash
+kubectl exec -it -n database main-db-1 -- psql -U postgres -c "CREATE DATABASE vibesites OWNER vibesites;"
+```
+
 ### 2. Basic Auth для Temporal UI (Traefik)
 Для защиты веб-интерфейса Temporal используется Basic Auth через Traefik Middleware.
 Секрет должен содержать файл `users` в формате htpasswd (сгенерировать можно через `htpasswd -nEb user password`).

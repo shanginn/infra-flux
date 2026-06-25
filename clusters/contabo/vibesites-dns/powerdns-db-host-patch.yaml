@@ -1,0 +1,32 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: powerdns-schema-init
+  namespace: vibesites-dns
+spec:
+  template:
+    spec:
+      containers:
+        - name: schema-init
+          env:
+            - name: POWERDNS_DB_HOST
+              value: pgsql-postgresql.pgsql.svc.cluster.local
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vibesites-powerdns
+  namespace: vibesites-dns
+spec:
+  template:
+    spec:
+      initContainers:
+        - name: schema-init
+          env:
+            - name: POWERDNS_DB_HOST
+              value: pgsql-postgresql.pgsql.svc.cluster.local
+      containers:
+        - name: powerdns
+          env:
+            - name: POWERDNS_DB_HOST
+              value: pgsql-postgresql.pgsql.svc.cluster.local

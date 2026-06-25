@@ -41,6 +41,12 @@ spec:
         createdb: true
         passwordSecret:
           name: vibesites-db-user
+      - name: powerdns
+        ensure: present
+        login: true
+        createdb: true
+        passwordSecret:
+          name: powerdns-db-user
       - name: flowerswork
         ensure: present
         login: true

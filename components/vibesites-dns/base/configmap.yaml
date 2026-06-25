@@ -1,0 +1,190 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vibesites-dns-config
+data:
+  pdns.conf: |
+    # Runtime settings are passed as container args in powerdns.yaml.
+  dnsdist.conf: |
+    setLocal('0.0.0.0:53')
+    setACL({'0.0.0.0/0', '::/0'})
+    webserver('0.0.0.0:8083')
+    setWebserverConfig({
+      password='unused',
+      apiKey='unused',
+      statsRequireAuthentication=false,
+      dashboardRequiresAuthentication=true,
+      apiRequiresAuthentication=true,
+      acl='10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16'
+    })
+
+    newServer({
+      address='__BIND9_ADDRESS__',
+      name='bind9',
+      pool='bind9',
+      checkName='shanginn.io.',
+      checkType='SOA',
+      checkInterval=10,
+      maxCheckFailures=3,
+      rise=2
+    })
+
+    newServer({
+      address='__POWERDNS_ADDRESS__',
+      name='powerdns',
+      pool='vibesites',
+      checkName='vibesites-dns-health.test.',
+      checkType='SOA',
+      checkInterval=10,
+      maxCheckFailures=3,
+      rise=2
+    })
+
+    bind_zones = newSuffixMatchNode()
+    bind_zones:add(newDNSName('aufstaff.ru.'))
+    bind_zones:add(newDNSName('flowerworks.ru.'))
+    bind_zones:add(newDNSName('flowerswork.ru.'))
+    bind_zones:add(newDNSName('generach.ru.'))
+    bind_zones:add(newDNSName('itaisolutions.ru.'))
+    bind_zones:add(newDNSName('mystaro.ru.'))
+    bind_zones:add(newDNSName('shanghaiauto.ru.'))
+    bind_zones:add(newDNSName('shanginn.io.'))
+    bind_zones:add(newDNSName('shanginn.ru.'))
+    bind_zones:add(newDNSName('sistent.ru.'))
+    bind_zones:add(newDNSName('vibesites.ru.'))
+    bind_zones:add(newDNSName('xn--80aacc0bc7ayl4g.xn--p1ai.'))
+    bind_zones:add(newDNSName('xn--80aafk8cdei3c.xn--p1ai.'))
+    bind_zones:add(newDNSName('xn--80aakfartrcj1ct.xn--p1ai.'))
+    bind_zones:add(newDNSName('xn--80afga3bt4c.xn--p1ai.'))
+    bind_zones:add(newDNSName('xn--80ahnllf1ado3f.xn--p1ai.'))
+    bind_zones:add(newDNSName('xn--80ajijindid5e.xn--p1ai.'))
+    bind_zones:add(newDNSName('xn--80alfarbic0a3a.xn--p1ai.'))
+    bind_zones:add(newDNSName('xn--b1abcbftdmxceabz.xn--p1ai.'))
+    bind_zones:add(newDNSName('xn--e1afqnbgc.xn--p1ai.'))
+
+    addAction(SuffixMatchNodeRule(bind_zones), PoolAction('bind9'))
+    addAction(AllRule(), PoolAction('vibesites'))
+  powerdns-schema.sql: |
+    CREATE TABLE IF NOT EXISTS domains (
+      id SERIAL PRIMARY KEY,
+      name VARCHAR(255) NOT NULL,
+      master VARCHAR(128) DEFAULT NULL,
+      last_check INT DEFAULT NULL,
+      type VARCHAR(8) NOT NULL,
+      notified_serial INT DEFAULT NULL,
+      account VARCHAR(40) DEFAULT NULL,
+      options TEXT DEFAULT NULL,
+      catalog VARCHAR(255) DEFAULT NULL,
+      CONSTRAINT c_lowercase_name CHECK (((name)::TEXT = lower((name)::TEXT)))
+    );
+
+    CREATE UNIQUE INDEX IF NOT EXISTS name_index ON domains(name);
+    CREATE INDEX IF NOT EXISTS catalog_idx ON domains(catalog);
+
+    CREATE TABLE IF NOT EXISTS records (
+      id BIGSERIAL PRIMARY KEY,
+      domain_id INT DEFAULT NULL REFERENCES domains(id) ON DELETE CASCADE,
+      name VARCHAR(255) DEFAULT NULL,
+      type VARCHAR(10) DEFAULT NULL,
+      content VARCHAR(65535) DEFAULT NULL,
+      ttl INT DEFAULT NULL,
+      prio INT DEFAULT NULL,
+      disabled BOOL DEFAULT false,
+      ordername VARCHAR(255),
+      auth BOOL DEFAULT true
+    );
+
+    CREATE INDEX IF NOT EXISTS rec_name_index ON records(name);
+    CREATE INDEX IF NOT EXISTS nametype_index ON records(name,type);
+    CREATE INDEX IF NOT EXISTS domain_id ON records(domain_id);
+    CREATE INDEX IF NOT EXISTS recordorder ON records(domain_id, ordername text_pattern_ops);
+
+    CREATE TABLE IF NOT EXISTS supermasters (
+      ip INET NOT NULL,
+      nameserver VARCHAR(255) NOT NULL,
+      account VARCHAR(40) NOT NULL,
+      PRIMARY KEY(ip, nameserver)
+    );
+
+    CREATE TABLE IF NOT EXISTS comments (
+      id SERIAL PRIMARY KEY,
+      domain_id INT NOT NULL REFERENCES domains(id) ON DELETE CASCADE,
+      name VARCHAR(255) NOT NULL,
+      type VARCHAR(10) NOT NULL,
+      modified_at INT NOT NULL,
+      account VARCHAR(40) DEFAULT NULL,
+      comment VARCHAR(65535) NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS comments_name_type_idx ON comments(name, type);
+    CREATE INDEX IF NOT EXISTS comments_order_idx ON comments(domain_id, modified_at);
+
+    CREATE TABLE IF NOT EXISTS domainmetadata (
+      id SERIAL PRIMARY KEY,
+      domain_id INT REFERENCES domains(id) ON DELETE CASCADE,
+      kind VARCHAR(32),
+      content TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS domainmetadata_idx ON domainmetadata(domain_id, kind);
+
+    CREATE TABLE IF NOT EXISTS cryptokeys (
+      id SERIAL PRIMARY KEY,
+      domain_id INT REFERENCES domains(id) ON DELETE CASCADE,
+      flags INT NOT NULL,
+      active BOOL,
+      published BOOL DEFAULT true,
+      content TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS domainidindex ON cryptokeys(domain_id);
+
+    CREATE TABLE IF NOT EXISTS tsigkeys (
+      id SERIAL PRIMARY KEY,
+      name VARCHAR(255),
+      algorithm VARCHAR(50),
+      secret VARCHAR(255),
+      CONSTRAINT c_lowercase_name CHECK (((name)::TEXT = lower((name)::TEXT)))
+    );
+
+    CREATE UNIQUE INDEX IF NOT EXISTS namealgoindex ON tsigkeys(name, algorithm);
+
+    WITH health_domain AS (
+      INSERT INTO domains (name, type)
+      VALUES ('vibesites-dns-health.test', 'NATIVE')
+      ON CONFLICT (name) DO UPDATE SET type = EXCLUDED.type
+      RETURNING id
+    ),
+    selected_domain AS (
+      SELECT id FROM health_domain
+      UNION
+      SELECT id FROM domains WHERE name = 'vibesites-dns-health.test'
+      LIMIT 1
+    ),
+    removed_records AS (
+      DELETE FROM records
+      WHERE domain_id = (SELECT id FROM selected_domain)
+      RETURNING id
+    )
+    INSERT INTO records (domain_id, name, type, content, ttl, prio, disabled, auth)
+    VALUES
+      (
+        (SELECT id FROM selected_domain),
+        'vibesites-dns-health.test',
+        'SOA',
+        'alena.dns.vibesites.ru. hostmaster.vibesites.ru. 2026062501 10800 3600 604800 3600',
+        300,
+        0,
+        false,
+        true
+      ),
+      (
+        (SELECT id FROM selected_domain),
+        'vibesites-dns-health.test',
+        'NS',
+        'alena.dns.vibesites.ru.',
+        300,
+        0,
+        false,
+        true
+      );

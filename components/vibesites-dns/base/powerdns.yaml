@@ -1,0 +1,244 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: powerdns-schema-init
+  labels:
+    app: powerdns
+    app.kubernetes.io/name: powerdns
+    app.kubernetes.io/part-of: vibesites-dns
+spec:
+  backoffLimit: 4
+  template:
+    metadata:
+      labels:
+        app: powerdns-schema-init
+        app.kubernetes.io/name: powerdns
+        app.kubernetes.io/part-of: vibesites-dns
+    spec:
+      restartPolicy: OnFailure
+      automountServiceAccountToken: false
+      containers:
+        - name: schema-init
+          image: postgres:18
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: POWERDNS_DB_HOST
+              value: main-db-rw.database.svc.cluster.local
+            - name: POWERDNS_DB_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: powerdns-db
+                  key: database
+            - name: POWERDNS_DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: powerdns-db
+                  key: username
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: powerdns-db
+                  key: password
+          command:
+            - /bin/sh
+            - -ec
+          args:
+            - psql -h "$POWERDNS_DB_HOST" -U "$POWERDNS_DB_USER" -d "$POWERDNS_DB_NAME" -v ON_ERROR_STOP=1 -f /schema/powerdns-schema.sql
+          volumeMounts:
+            - name: config
+              mountPath: /schema
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: vibesites-dns-config
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vibesites-powerdns
+  labels:
+    app: powerdns
+    app.kubernetes.io/name: powerdns
+    app.kubernetes.io/part-of: vibesites-dns
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: powerdns
+      app.kubernetes.io/name: powerdns
+  template:
+    metadata:
+      labels:
+        app: powerdns
+        app.kubernetes.io/name: powerdns
+        app.kubernetes.io/part-of: vibesites-dns
+    spec:
+      automountServiceAccountToken: false
+      initContainers:
+        - name: schema-init
+          image: postgres:18
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: POWERDNS_DB_HOST
+              value: main-db-rw.database.svc.cluster.local
+            - name: POWERDNS_DB_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: powerdns-db
+                  key: database
+            - name: POWERDNS_DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: powerdns-db
+                  key: username
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: powerdns-db
+                  key: password
+          command:
+            - /bin/sh
+            - -ec
+          args:
+            - psql -h "$POWERDNS_DB_HOST" -U "$POWERDNS_DB_USER" -d "$POWERDNS_DB_NAME" -v ON_ERROR_STOP=1 -f /schema/powerdns-schema.sql
+          volumeMounts:
+            - name: config
+              mountPath: /schema
+              readOnly: true
+      containers:
+        - name: powerdns
+          image: powerdns/pdns-auth-49:4.9.5
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: POWERDNS_DB_HOST
+              value: main-db-rw.database.svc.cluster.local
+            - name: POWERDNS_DB_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: powerdns-db
+                  key: database
+            - name: POWERDNS_DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: powerdns-db
+                  key: username
+            - name: POWERDNS_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: powerdns-db
+                  key: password
+            - name: POWERDNS_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: powerdns-api
+                  key: api-key
+          args:
+            - --ignore-unknown-settings=yes
+            - --daemon=no
+            - --guardian=no
+            - --local-address=0.0.0.0
+            - --local-port=53
+            - --launch=gpgsql
+            - --gpgsql-host=$(POWERDNS_DB_HOST)
+            - --gpgsql-dbname=$(POWERDNS_DB_NAME)
+            - --gpgsql-user=$(POWERDNS_DB_USER)
+            - --gpgsql-password=$(POWERDNS_DB_PASSWORD)
+            - --api=yes
+            - --api-key=$(POWERDNS_API_KEY)
+            - --webserver=yes
+            - --webserver-address=0.0.0.0
+            - --webserver-port=8081
+            - --webserver-allow-from=10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
+            - --default-soa-content=alena.dns.vibesites.ru. hostmaster.vibesites.ru. 0 10800 3600 604800 3600
+          ports:
+            - name: dns-tcp
+              containerPort: 53
+              protocol: TCP
+            - name: dns-udp
+              containerPort: 53
+              protocol: UDP
+            - name: http-api
+              containerPort: 8081
+              protocol: TCP
+          readinessProbe:
+            tcpSocket:
+              port: dns-tcp
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: dns-tcp
+            initialDelaySeconds: 30
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          volumeMounts:
+            - name: config
+              mountPath: /etc/powerdns/pdns.conf
+              readOnly: true
+              subPath: pdns.conf
+      volumes:
+        - name: config
+          configMap:
+            name: vibesites-dns-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vibesites-powerdns
+  labels:
+    app: powerdns
+    app.kubernetes.io/name: powerdns
+    app.kubernetes.io/part-of: vibesites-dns
+spec:
+  type: ClusterIP
+  selector:
+    app: powerdns
+    app.kubernetes.io/name: powerdns
+  ports:
+    - name: dns-tcp
+      port: 53
+      protocol: TCP
+      targetPort: dns-tcp
+    - name: dns-udp
+      port: 53
+      protocol: UDP
+      targetPort: dns-udp
+    - name: http-api
+      port: 8081
+      protocol: TCP
+      targetPort: http-api
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: powerdns-authoritative
+  labels:
+    app: powerdns
+    app.kubernetes.io/name: powerdns
+    app.kubernetes.io/part-of: vibesites-dns
+    vibesites.dev/alias-for: vibesites-powerdns
+spec:
+  type: ClusterIP
+  selector:
+    app: powerdns
+    app.kubernetes.io/name: powerdns
+  ports:
+    - name: dns-tcp
+      port: 53
+      protocol: TCP
+      targetPort: dns-tcp
+    - name: dns-udp
+      port: 53
+      protocol: UDP
+      targetPort: dns-udp
+    - name: http-api
+      port: 8081
+      protocol: TCP
+      targetPort: http-api

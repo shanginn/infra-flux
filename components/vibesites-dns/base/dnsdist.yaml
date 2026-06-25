@@ -1,0 +1,129 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vibesites-dnsdist
+  labels:
+    app: dnsdist
+    app.kubernetes.io/name: dnsdist
+    app.kubernetes.io/part-of: vibesites-dns
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dnsdist
+      app.kubernetes.io/name: dnsdist
+  template:
+    metadata:
+      labels:
+        app: dnsdist
+        app.kubernetes.io/name: dnsdist
+        app.kubernetes.io/part-of: vibesites-dns
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - name: dnsdist
+          image: powerdns/dnsdist-19:1.9.10
+          imagePullPolicy: IfNotPresent
+          command:
+            - /bin/sh
+            - -ec
+          args:
+            - |
+              bind9_ip="$(getent hosts bind9-service.bind9.svc.cluster.local | awk '{print $1; exit}')"
+              powerdns_ip="$(getent hosts vibesites-powerdns.vibesites-dns.svc.cluster.local | awk '{print $1; exit}')"
+              test -n "$bind9_ip"
+              test -n "$powerdns_ip"
+              sed \
+                -e "s/__BIND9_ADDRESS__/${bind9_ip}:53/g" \
+                -e "s/__POWERDNS_ADDRESS__/${powerdns_ip}:53/g" \
+                /etc/dnsdist/dnsdist.conf > /tmp/dnsdist.conf
+              exec dnsdist --supervised --disable-syslog --config /tmp/dnsdist.conf
+          ports:
+            - name: dns-tcp
+              containerPort: 53
+              protocol: TCP
+            - name: dns-udp
+              containerPort: 53
+              protocol: UDP
+            - name: metrics
+              containerPort: 8083
+              protocol: TCP
+          readinessProbe:
+            tcpSocket:
+              port: dns-tcp
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: dns-tcp
+            initialDelaySeconds: 30
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          volumeMounts:
+            - name: config
+              mountPath: /etc/dnsdist
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: vibesites-dns-config
+            items:
+              - key: dnsdist.conf
+                path: dnsdist.conf
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vibesites-dnsdist
+  labels:
+    app: dnsdist
+    app.kubernetes.io/name: dnsdist
+    app.kubernetes.io/part-of: vibesites-dns
+spec:
+  type: ClusterIP
+  selector:
+    app: dnsdist
+    app.kubernetes.io/name: dnsdist
+  ports:
+    - name: dns-tcp
+      port: 53
+      protocol: TCP
+      targetPort: dns-tcp
+    - name: dns-udp
+      port: 53
+      protocol: UDP
+      targetPort: dns-udp
+    - name: metrics
+      port: 8083
+      protocol: TCP
+      targetPort: metrics
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vibesites-dnsdist-test
+  labels:
+    app: dnsdist
+    app.kubernetes.io/name: dnsdist
+    app.kubernetes.io/part-of: vibesites-dns
+    vibesites.dev/exposure: test-listener
+spec:
+  type: ClusterIP
+  selector:
+    app: dnsdist
+    app.kubernetes.io/name: dnsdist
+  ports:
+    - name: dns-tcp
+      port: 53053
+      protocol: TCP
+      targetPort: dns-tcp
+    - name: dns-udp
+      port: 53053
+      protocol: UDP
+      targetPort: dns-udp

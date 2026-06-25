@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: vibesites-dns
+  labels:
+    app.kubernetes.io/name: vibesites-dns
+    app.kubernetes.io/part-of: vibesites

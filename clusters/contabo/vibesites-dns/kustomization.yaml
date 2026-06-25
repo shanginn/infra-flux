@@ -1,0 +1,9 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../../components/vibesites-dns/base
+
+patches:
+  - path: service-nodeport-patch.yaml
+  - path: powerdns-db-host-patch.yaml

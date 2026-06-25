@@ -98,7 +98,10 @@ zone "vibesites.ru" IN {
 zone "xn--80aacc0bc7ayl4g.xn--p1ai" IN {
     type master;
     file "/etc/bind/zones/vibesites.rf";
-    allow-update { none; };
+    journal "/var/lib/bind/vibesites.rf.jnl";
+    update-policy {
+        grant cert-manager name _acme-challenge.xn--80aacc0bc7ayl4g.xn--p1ai. TXT;
+    };
 };
 
 zone "flowerswork.ru" IN {

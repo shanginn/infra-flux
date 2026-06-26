@@ -1,6 +1,6 @@
 $TTL 24H
 @     IN  SOA @       hostmaster.vibesites.ru. (
-  3   ; serial
+  4   ; serial
   3H  ; refresh
   1H  ; retry
   1W  ; expire
@@ -13,8 +13,7 @@ $TTL 24H
 ; Map the domain to an IP address
 @     IN  A           185.221.212.224
 *     IN  A           185.221.212.224
-*.dns IN  A           84.247.177.201
-*.dns IN  A           185.221.212.224
+*.dns 300 IN  A       185.221.212.224
 
 ; Map 'www' and 'mail' subdomains to the same IP address
 www   IN  A           185.221.212.224

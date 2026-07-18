@@ -1,0 +1,25 @@
+apiVersion: v1
+data:
+    access-key: ENC[AES256_GCM,data:YZkJWLWsSXuLexR/w5bOWq+xxqIqihiP,iv:dfspXudJJvPz7YAgBSR5/EBNj+hsr2Xv08Piiwxeq74=,tag:vK+R1a3+tvdPeFIEL4fIGQ==,type:str]
+    bucket: ENC[AES256_GCM,data:S6Tenb0AkH6DguS3,iv:cJ5GzKg4wdmqBgJEvdvA8n59MZQe4ie3DSCkTbx4qkk=,tag:gKwZMgxt86PjVuQzMuDGGg==,type:str]
+    secret-key: ENC[AES256_GCM,data:0/svXPg1B7BYRsO3dCPaA5TKr8UuUKoXxtwXuWv/y33/jPLcYGmw5X8ZJm/E9WqZn8cT2kKCTiYIO5WtWWt03w==,iv:BAngeOoEeEkNQ4hGWqgOVQHfOBl18p6LBsw06lwZOYs=,tag:6cqEnkd+KoJlNAq1Zz6crA==,type:str]
+kind: Secret
+metadata:
+    creationTimestamp: null
+    name: mail-backup-provisioning
+    namespace: minio
+sops:
+    age:
+        - recipient: age16qyyuegxwzgwytee9u0fw477zjq4pt5plt877rw45qcx2yl5nujske0fu0
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSB4SG1pdWl0M1hGM2N3QnRB
+            SVJFQ296alBjekZHcXVUUVQ5MC9IMUJiYTJvCmpYL2VlUG42MDZzOXpxNkUvSThu
+            NVZXOTc3SWM3R204NVJpMkNEUkVjcUkKLS0tIFUwb2JIeENuMkVmSFN1YVVhL21q
+            Skl6NHlSb29zYWNqNlJRR0JldHpWTlEKpjEtjBLeTq29qYLB+nVTVeD1iCVjxYaf
+            Cqz0nYB6JhJbqEEXG1HvKy2JGaAbQjGRuqyJCr8s+N69+0wT4i/d0w==
+            -----END AGE ENCRYPTED FILE-----
+    lastmodified: "2026-07-17T06:56:36Z"
+    mac: ENC[AES256_GCM,data:gPEUWC7YTw4pRfIQvi8E9XJhxfoU2VJvKsDajfFn85hfuHKh85swcePv1v/bfnN2cW0bjF/loPSLLLoLSmPh+5csrPKWs3/CVUUsC13TqnSeKb9YYtevcCu9RbZYHoVTMiNDZafIyvebLXuTeCcuvy2FuKL022RhZSrqULQtbz0=,iv:xtKnKUpbfwcuSjj64QpmzaoY53Djt35ERTd5CW8HaTk=,tag:N6RN3SOLIRMifz3Aw6WHIA==,type:str]
+    encrypted_regex: ^(data|stringData)$
+    version: 3.11.0

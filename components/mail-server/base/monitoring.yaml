@@ -1,0 +1,127 @@
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMServiceScrape
+metadata:
+  name: stalwart
+  namespace: mail-system
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: stalwart
+      app.kubernetes.io/instance: mail-hub
+  endpoints:
+    - port: http
+      path: /metrics/prometheus
+      interval: 30s
+      scrapeTimeout: 10s
+      basicAuth:
+        username:
+          name: mail-system-credentials
+          key: metrics-username
+        password:
+          name: mail-system-credentials
+          key: metrics-password
+---
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMServiceScrape
+metadata:
+  name: mail-backup-pushgateway
+  namespace: mail-system
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mail-backup-pushgateway
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 30s
+      scrapeTimeout: 10s
+---
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMProbe
+metadata:
+  name: mail-smtp
+  namespace: mail-system
+spec:
+  jobName: mail-smtp
+  interval: 30s
+  module: tcp_connect
+  vmProberSpec:
+    url: mail-blackbox-exporter.mail-system.svc.cluster.local:9115
+  targets:
+    staticConfig:
+      labels:
+        mail_protocol: smtp
+      targets:
+        - stalwart.mail-system.svc.cluster.local:25
+---
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMProbe
+metadata:
+  name: mail-submissions
+  namespace: mail-system
+spec:
+  jobName: mail-submissions
+  interval: 30s
+  module: implicit_tls
+  vmProberSpec:
+    url: mail-blackbox-exporter.mail-system.svc.cluster.local:9115
+  targets:
+    staticConfig:
+      labels:
+        mail_protocol: submissions
+      targets:
+        - stalwart.mail-system.svc.cluster.local:465
+---
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMProbe
+metadata:
+  name: mail-submission
+  namespace: mail-system
+spec:
+  jobName: mail-submission
+  interval: 30s
+  module: tcp_connect
+  vmProberSpec:
+    url: mail-blackbox-exporter.mail-system.svc.cluster.local:9115
+  targets:
+    staticConfig:
+      labels:
+        mail_protocol: submission
+      targets:
+        - stalwart.mail-system.svc.cluster.local:587
+---
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMProbe
+metadata:
+  name: mail-imaps
+  namespace: mail-system
+spec:
+  jobName: mail-imaps
+  interval: 30s
+  module: implicit_tls
+  vmProberSpec:
+    url: mail-blackbox-exporter.mail-system.svc.cluster.local:9115
+  targets:
+    staticConfig:
+      labels:
+        mail_protocol: imaps
+      targets:
+        - stalwart.mail-system.svc.cluster.local:993
+---
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMProbe
+metadata:
+  name: mail-https
+  namespace: mail-system
+spec:
+  jobName: mail-https
+  interval: 30s
+  module: http_2xx
+  vmProberSpec:
+    url: mail-blackbox-exporter.mail-system.svc.cluster.local:9115
+  targets:
+    staticConfig:
+      labels:
+        mail_protocol: https
+      targets:
+        - https://mail-admin.shanginn.io/healthz/ready

@@ -1,0 +1,104 @@
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMRule
+metadata:
+  name: mail-hub
+  namespace: mail-system
+spec:
+  groups:
+    - name: mail-availability
+      rules:
+        - alert: MailSmtpUnavailable
+          expr: min_over_time(probe_success{job="mail-smtp"}[5m]) < 1 or absent(probe_success{job="mail-smtp"})
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: SMTP is unavailable
+        - alert: MailSubmissionUnavailable
+          expr: min_over_time(probe_success{job=~"mail-submission|mail-submissions"}[5m]) < 1 or absent(probe_success{job=~"mail-submission|mail-submissions"})
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: Authenticated SMTP submission is unavailable
+        - alert: MailImapsUnavailable
+          expr: min_over_time(probe_success{job="mail-imaps"}[5m]) < 1 or absent(probe_success{job="mail-imaps"})
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: IMAPS is unavailable
+        - alert: MailHttpsUnavailable
+          expr: min_over_time(probe_success{job="mail-https"}[5m]) < 1 or absent(probe_success{job="mail-https"})
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: Mail HTTPS endpoint is unavailable
+        - alert: MailTlsCertificateExpiring
+          expr: probe_ssl_earliest_cert_expiry{job=~"mail-imaps|mail-submissions|mail-https"} - time() < 14 * 24 * 3600
+          for: 30m
+          labels:
+            severity: warning
+          annotations:
+            summary: Mail TLS certificate expires in less than 14 days
+    - name: mail-runtime
+      rules:
+        - alert: MailQueueBacklog
+          expr: queue_count > 100
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: Stalwart delivery queue is above 100 messages
+        - alert: MailQueueCritical
+          expr: queue_count > 1000
+          for: 10m
+          labels:
+            severity: critical
+          annotations:
+            summary: Stalwart delivery queue is above 1000 messages
+        - alert: MailDeliveryFailures
+          expr: increase(delivery_message_rejected_total[15m]) + increase(delivery_rcpt_to_failed_total[15m]) > 10
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: Remote delivery failures are elevated
+        - alert: MailPvcNearlyFull
+          expr: kubelet_volume_stats_available_bytes{namespace="mail-system",persistentvolumeclaim=~"data-stalwart-.*"} / kubelet_volume_stats_capacity_bytes{namespace="mail-system",persistentvolumeclaim=~"data-stalwart-.*"} < 0.15
+          for: 15m
+          labels:
+            severity: critical
+          annotations:
+            summary: Mail PVC has less than 15 percent free
+        - alert: MailRocksDbErrors
+          expr: increase(store_rocksdb_error_total[15m]) > 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: Stalwart reported RocksDB errors
+    - name: mail-backup
+      rules:
+        - alert: MailBackupFailed
+          expr: mail_backup_success == 0
+          for: 10m
+          labels:
+            severity: critical
+          annotations:
+            summary: Latest off-site mail backup failed
+        - alert: MailBackupStale
+          expr: time() - mail_backup_last_success_timestamp_seconds > 36 * 3600 or absent(mail_backup_last_success_timestamp_seconds)
+          for: 30m
+          labels:
+            severity: critical
+          annotations:
+            summary: No successful off-site mail backup in 36 hours
+        - alert: MailBackupJobFailed
+          expr: kube_job_status_failed{namespace="mail-system",job_name=~"mail-backup-.*"} > 0
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: Kubernetes mail backup job failed

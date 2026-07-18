@@ -1,0 +1,14 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: mail-system
+
+resources:
+  - ../../../components/mail-server/base
+  - ../../../mail
+  - admin-allowlist.enc.yaml
+
+# Recovery bootstrap completed. The component and its encrypted credential
+# must remain absent during normal operation.
+
+# The public L4/user component is intentionally absent. See:
+# ../../../components/mail-server/cutover/kustomization.yaml

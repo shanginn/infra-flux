@@ -1,6 +1,6 @@
 $TTL 24H
 @     IN  SOA @       hostmaster.shanginn.io. (
-  2026061602       ; serial
+  2026071701       ; serial
   3H      ; refresh
   1H      ; retry
   1W      ; expire
@@ -16,6 +16,8 @@ ts         IN  A           185.221.212.224
 teamspeak  IN  A           185.221.212.224
 temporal.rubase IN A        185.221.212.224
 *.rubase   IN  A           185.221.212.224
+mx1        300 IN  A       185.221.212.224
+mail-admin 300 IN  A       185.221.212.224
 *          IN  A           84.247.177.201
 
 @                  IN  MX  10      mail.shanginn.io.

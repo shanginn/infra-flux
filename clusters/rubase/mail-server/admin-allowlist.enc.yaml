@@ -1,0 +1,26 @@
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+    name: mail-admin-allowlist
+    namespace: mail-system
+spec:
+    ipAllowList:
+        sourceRange:
+            - ENC[AES256_GCM,data:XLNI/3lX3T2wNwzAgWqkBA==,iv:n+HMqNCMxnX4W6v6pYkQN0u/zLvuUqpgwhQic7GmLAI=,tag:ucOJ/RtKJZvCDiQWHhP0vg==,type:str]
+        ipStrategy:
+            depth: 0
+sops:
+    age:
+        - recipient: age16qyyuegxwzgwytee9u0fw477zjq4pt5plt877rw45qcx2yl5nujske0fu0
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSA5bzZ5N25sSU9WTFEwRDhO
+            K1ZVTDBxVDFLd3JoWDlxUnJpRXlYT1JHSm1rCldWUVRsUTRjVVBQVCtmd2RBb0pO
+            Q1N4L1lFL1lmWXc2VGFJdjhkT1Y5L00KLS0tIFpIdWtaNzYyR1VzQXZueWJnTnBa
+            cC9iUWZ3ejR6NDNTb2UvSjcrREkwTzQKAm+aF2Z+HdBgBCZ7t1h+WreHcPesvhva
+            UiVTZ8PZ3RZz6NAhYhwvdaFG457fvOThSpk19HIOvx5kZLjZYZx0yw==
+            -----END AGE ENCRYPTED FILE-----
+    lastmodified: "2026-07-18T04:41:55Z"
+    mac: ENC[AES256_GCM,data:StRXDX71TKrMI1zEo08CSvD5KKvXQkGTujyvhklkKk3gpBPIWG65yLwPNTdKeDWNckF3pEqQaX41f2lKvaeFlIaCNhDjgKplsq69GpFWEp6sQ224cttYStmRhnpZJdXegZQvGGotI4r/tCZCepv5lzHq0X51kIYtKBlXUzfLVsc=,iv:bX8kDa/PMDYkQKEPtnvUiVfhvB7G+vQ4bCYjmX7m6Tw=,tag:a7LG0WyZ1SEOdhA/BWyxIA==,type:str]
+    encrypted_regex: ^(sourceRange)$
+    version: 3.11.0

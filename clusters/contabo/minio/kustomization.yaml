@@ -5,3 +5,6 @@ resources:
   - source.yaml
   - release.yaml
   - primerochka-bucket-setup.yaml
+  - mail-backup-provisioning.enc.yaml
+  - mail-backup-config.yaml
+  - mail-backup-ingress.yaml

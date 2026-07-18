@@ -1,0 +1,145 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: mail-reconciler
+  namespace: mail-system
+  labels:
+    app.kubernetes.io/name: mail-reconciler
+    app.kubernetes.io/part-of: mail-hub
+spec:
+  schedule: "*/10 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 5
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      ttlSecondsAfterFinished: 86400
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: mail-reconciler
+            app.kubernetes.io/part-of: mail-hub
+        spec:
+          serviceAccountName: mail-reconciler
+          automountServiceAccountToken: false
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            fsGroup: 65532
+            seccompProfile:
+              type: RuntimeDefault
+          initContainers:
+            - name: render
+              image: ruby:3.3.6-alpine3.21
+              imagePullPolicy: IfNotPresent
+              command:
+                - ruby
+                - /scripts/render-plan.rb
+              env:
+                - name: BOOTSTRAP
+                  value: "false"
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop:
+                    - ALL
+              volumeMounts:
+                - name: scripts
+                  mountPath: /scripts
+                  readOnly: true
+                - name: catalog
+                  mountPath: /catalog
+                  readOnly: true
+                - name: credentials
+                  mountPath: /credentials
+                  readOnly: true
+                - name: work
+                  mountPath: /work
+                - name: tmp
+                  mountPath: /tmp
+            - name: validate
+              image: ghcr.io/stalwartlabs/cli:1.0.10
+              imagePullPolicy: IfNotPresent
+              args:
+                - apply
+                - --file
+                - /work/plan.ndjson
+                - --dry-run
+              env: &reconciler-env
+                - name: STALWART_URL
+                  value: http://stalwart:8080
+                - name: STALWART_USER
+                  value: gitops@mailhub.shanginn.io
+                - name: STALWART_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: mail-system-credentials
+                      key: gitops-password
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop:
+                    - ALL
+              volumeMounts:
+                - name: work
+                  mountPath: /work
+                  readOnly: true
+                - name: cli-cache
+                  mountPath: /home/nonroot/.cache
+                - name: tmp
+                  mountPath: /tmp
+          containers:
+            - name: apply
+              image: ghcr.io/stalwartlabs/cli:1.0.10
+              imagePullPolicy: IfNotPresent
+              args:
+                - apply
+                - --file
+                - /work/plan.ndjson
+                - --json
+              env: *reconciler-env
+              resources:
+                requests:
+                  cpu: 25m
+                  memory: 64Mi
+                limits:
+                  cpu: 250m
+                  memory: 256Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop:
+                    - ALL
+              volumeMounts:
+                - name: work
+                  mountPath: /work
+                  readOnly: true
+                - name: cli-cache
+                  mountPath: /home/nonroot/.cache
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: scripts
+              configMap:
+                name: mail-reconciler
+            - name: catalog
+              configMap:
+                name: mail-domain-catalog
+            - name: credentials
+              secret:
+                secretName: mail-system-credentials
+            - name: work
+              emptyDir:
+                sizeLimit: 16Mi
+            - name: cli-cache
+              emptyDir:
+                sizeLimit: 64Mi
+            - name: tmp
+              emptyDir:
+                sizeLimit: 64Mi

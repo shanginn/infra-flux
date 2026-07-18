@@ -1,0 +1,10 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: mail-hub
+  namespace: mail-system
+spec:
+  dnsNames:
+    - mx1.shanginn.io
+    - mail.shanginn.io
+    - mail-admin.shanginn.io

@@ -14,3 +14,9 @@ spec:
         enabled: true
       kubernetesService:
         enabled: true
+    service:
+      spec:
+        # Preserve client source addresses so IP allowlists on sensitive
+        # endpoints (including mail-admin) evaluate the real remote IP.
+        # Rubase is a single-node cluster, so every Traefik endpoint is local.
+        externalTrafficPolicy: Local

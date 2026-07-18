@@ -1,0 +1,52 @@
+apiVersion: mail.shanginn.io/v1alpha1
+kind: MailDomain
+metadata:
+  name: vibesites.ru
+spec:
+  description: Vibesites pilot domain on the shared Rubase mail hub
+  lifecycle:
+    state: active
+    prune:
+      approved: false
+  domainAliases: []
+  catchAll:
+    enabled: false
+  subAddressing: true
+  reportAddress: dmarc@vibesites.ru
+  routing:
+    inbound: local
+    outbound: direct
+  policies:
+    bulkAllowed: false
+    anonymousRelayAllowed: false
+    maxRecipientsPerMessage: 50
+  quotas:
+    defaultMailboxBytes: 5368709120
+  dkim:
+    selector: mail2026
+    privateKeyFile: /run/dkim/vibesites.ru.pem
+  groups: []
+  accounts:
+    - localPart: hello
+      description: Vibesites primary mailbox
+      state: active
+      credentialRef: vibesites-hello-password
+      quotaBytes: 5368709120
+      locale: ru_RU
+      timeZone: Asia/Yekaterinburg
+      aliases:
+        - localPart: support
+          description: Customer support
+        - localPart: postmaster
+          description: RFC-required postmaster address
+        - localPart: abuse
+          description: RFC-required abuse address
+        - localPart: dmarc
+          description: DMARC aggregate reports
+      senderIdentities:
+        - hello@vibesites.ru
+        - support@vibesites.ru
+        - postmaster@vibesites.ru
+        - abuse@vibesites.ru
+      backup:
+        enabled: true

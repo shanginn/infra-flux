@@ -1,0 +1,256 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mail-backup-pushgateway
+  namespace: mail-system
+  labels:
+    app.kubernetes.io/name: mail-backup-pushgateway
+    app.kubernetes.io/part-of: mail-hub
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mail-backup-pushgateway
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: mail-backup-pushgateway
+        app.kubernetes.io/part-of: mail-hub
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: pushgateway
+          image: prom/pushgateway:v1.11.1
+          imagePullPolicy: IfNotPresent
+          args:
+            - --web.listen-address=:9091
+            - --persistence.file=/data/metrics
+            - --persistence.interval=5m
+          ports:
+            - name: http
+              containerPort: 9091
+          readinessProbe:
+            httpGet:
+              path: /-/ready
+              port: http
+          livenessProbe:
+            httpGet:
+              path: /-/healthy
+              port: http
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: data
+          emptyDir:
+            sizeLimit: 32Mi
+        - name: tmp
+          emptyDir:
+            sizeLimit: 32Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mail-backup-pushgateway
+  namespace: mail-system
+  labels:
+    app.kubernetes.io/name: mail-backup-pushgateway
+spec:
+  selector:
+    app.kubernetes.io/name: mail-backup-pushgateway
+  ports:
+    - name: http
+      port: 9091
+      targetPort: http
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: mail-backup
+  namespace: mail-system
+  labels:
+    app.kubernetes.io/name: mail-backup
+    app.kubernetes.io/part-of: mail-hub
+spec:
+  schedule: "17 2 * * *"
+  timeZone: Asia/Yekaterinburg
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 3600
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 7
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 21600
+      # The Pod contains a plaintext local Vandelay archive while it runs.
+      # Restic encrypts the off-site copy; remove the ephemeral Pod promptly.
+      ttlSecondsAfterFinished: 3600
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: mail-backup
+            app.kubernetes.io/part-of: mail-hub
+        spec:
+          serviceAccountName: mail-backup
+          automountServiceAccountToken: false
+          hostAliases:
+            - ip: 10.43.43.91
+              hostnames:
+                - mx1.shanginn.io
+                - mail-admin.shanginn.io
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            fsGroup: 65532
+            seccompProfile:
+              type: RuntimeDefault
+          initContainers:
+            - name: download-vandelay
+              image: alpine:3.21.3
+              imagePullPolicy: IfNotPresent
+              command:
+                - /bin/sh
+                - -ec
+                - |
+                  archive=/tmp/vandelay.tar.gz
+                  wget -T 30 -t 3 -qO "$archive" https://github.com/stalwartlabs/vandelay/releases/download/v1.0.6/vandelay-x86_64-unknown-linux-musl.tar.gz
+                  echo 'a3d8a15789346227f880d35c5c40b2d7a98930b177fc805ce20009f43f778767  /tmp/vandelay.tar.gz' | sha256sum -c -
+                  tar -xzf "$archive" -C /tools
+                  mv /tools/vandelay-x86_64-unknown-linux-musl/vandelay /tools/vandelay
+                  chmod 0555 /tools/vandelay
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop:
+                    - ALL
+              volumeMounts:
+                - name: tools
+                  mountPath: /tools
+                - name: tmp
+                  mountPath: /tmp
+            - name: render-targets
+              image: ruby:3.3.6-alpine3.21
+              imagePullPolicy: IfNotPresent
+              command:
+                - ruby
+                - /scripts/render-plan.rb
+              env:
+                - name: BOOTSTRAP
+                  value: "false"
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop:
+                    - ALL
+              volumeMounts:
+                - name: scripts
+                  mountPath: /scripts
+                  readOnly: true
+                - name: catalog
+                  mountPath: /catalog
+                  readOnly: true
+                - name: credentials
+                  mountPath: /credentials
+                  readOnly: true
+                - name: work
+                  mountPath: /work
+                - name: tmp
+                  mountPath: /tmp
+          containers:
+            - name: backup
+              image: restic/restic:0.18.0
+              imagePullPolicy: IfNotPresent
+              command:
+                - /bin/sh
+                - /scripts/backup.sh
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 128Mi
+                limits:
+                  cpu: "1"
+                  memory: 1Gi
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop:
+                    - ALL
+              volumeMounts:
+                - name: scripts
+                  mountPath: /scripts
+                  readOnly: true
+                - name: catalog
+                  mountPath: /catalog
+                  readOnly: true
+                - name: credentials
+                  mountPath: /credentials
+                  readOnly: true
+                - name: backup-secrets
+                  mountPath: /backup-secrets
+                  readOnly: true
+                - name: tools
+                  mountPath: /tools
+                  readOnly: true
+                - name: work
+                  mountPath: /work
+                  readOnly: true
+                - name: snapshots
+                  mountPath: /snapshots
+                - name: restic-cache
+                  mountPath: /home/nonroot/.cache/restic
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: scripts
+              configMap:
+                name: mail-reconciler
+            - name: catalog
+              configMap:
+                name: mail-domain-catalog
+            - name: credentials
+              secret:
+                secretName: mail-system-credentials
+            - name: backup-secrets
+              secret:
+                secretName: mail-backup-credentials
+            - name: tools
+              emptyDir:
+                sizeLimit: 64Mi
+            - name: work
+              emptyDir:
+                sizeLimit: 16Mi
+            - name: snapshots
+              emptyDir:
+                sizeLimit: 5Gi
+            - name: restic-cache
+              emptyDir:
+                sizeLimit: 1Gi
+            - name: tmp
+              emptyDir:
+                sizeLimit: 64Mi

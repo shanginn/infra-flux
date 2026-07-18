@@ -1,0 +1,15 @@
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+
+# GATED COMPONENT. Do not add this component to a cluster overlay until:
+# PTR/FCrDNS, public TLS, off-site restore test, DNSBL, TCP/25 and open-relay
+# tests are all green. Its inclusion publishes the mail L4 ports.
+resources:
+  - service-public.yaml
+  - ingress-user.yaml
+  - ingress-user-admin.yaml
+
+patches:
+  - path: certificate-patch.yaml
+  - path: networkpolicy-patch.yaml
+  - path: public-url-patch.yaml

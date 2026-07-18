@@ -1,0 +1,145 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: stalwart
+  namespace: mail-system
+  labels:
+    app.kubernetes.io/name: stalwart
+    app.kubernetes.io/instance: mail-hub
+    app.kubernetes.io/part-of: mail-hub
+spec:
+  serviceName: stalwart
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: stalwart
+      app.kubernetes.io/instance: mail-hub
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: stalwart
+        app.kubernetes.io/instance: mail-hub
+        app.kubernetes.io/part-of: mail-hub
+    spec:
+      serviceAccountName: stalwart
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 60
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 2000
+        runAsGroup: 2000
+        fsGroup: 2000
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: stalwart
+          image: stalwartlabs/stalwart:v0.16.13@sha256:254320d6d9af6bafce85fcf301aaa29fa0a4a07e2b91e19fe97588ecfb230fab
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: STALWART_PUBLIC_URL
+              value: https://mail-admin.shanginn.io
+            - name: STALWART_METRICS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mail-system-credentials
+                  key: metrics-password
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+            - name: https-internal
+              containerPort: 8443
+              protocol: TCP
+            - name: smtp
+              containerPort: 25
+              protocol: TCP
+            - name: submissions
+              containerPort: 465
+              protocol: TCP
+            - name: submission
+              containerPort: 587
+              protocol: TCP
+            - name: imaps
+              containerPort: 993
+              protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /healthz/ready
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 12
+          livenessProbe:
+            httpGet:
+              path: /healthz/live
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 3
+            failureThreshold: 3
+          startupProbe:
+            httpGet:
+              path: /healthz/live
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 60
+          resources:
+            requests:
+              cpu: 250m
+              memory: 1Gi
+            limits:
+              cpu: "2"
+              memory: 2Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+              add:
+                - NET_BIND_SERVICE
+          volumeMounts:
+            - name: config
+              mountPath: /etc/stalwart/config.json
+              subPath: config.json
+              readOnly: true
+            - name: data
+              mountPath: /var/lib/stalwart
+            - name: tls
+              mountPath: /run/tls
+              readOnly: true
+            - name: dkim-keys
+              mountPath: /run/dkim
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: config
+          configMap:
+            name: stalwart-config
+        - name: tls
+          secret:
+            secretName: mail-hub-tls
+        - name: dkim-keys
+          secret:
+            secretName: mail-dkim-keys
+            defaultMode: 0400
+        - name: tmp
+          emptyDir:
+            sizeLimit: 256Mi
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        labels:
+          app.kubernetes.io/name: stalwart
+          app.kubernetes.io/instance: mail-hub
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        storageClassName: local-path
+        resources:
+          requests:
+            storage: 10Gi

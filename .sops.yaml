@@ -1,0 +1,10 @@
+creation_rules:
+  - path_regex: '(^|/)mail/secrets/.*\.enc\.yaml$'
+    encrypted_regex: '^(data|stringData)$'
+    age: age16qyyuegxwzgwytee9u0fw477zjq4pt5plt877rw45qcx2yl5nujske0fu0
+  - path_regex: '(^|/)clusters/contabo/minio/.*\.enc\.yaml$'
+    encrypted_regex: '^(data|stringData)$'
+    age: age16qyyuegxwzgwytee9u0fw477zjq4pt5plt877rw45qcx2yl5nujske0fu0
+  - path_regex: '(^|/)clusters/rubase/mail-server/admin-allowlist\.enc\.yaml$'
+    encrypted_regex: '^(sourceRange)$'
+    age: age16qyyuegxwzgwytee9u0fw477zjq4pt5plt877rw45qcx2yl5nujske0fu0

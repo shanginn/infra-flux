@@ -1,0 +1,23 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: mail-server
+  namespace: flux-system
+spec:
+  interval: 10m0s
+  retryInterval: 1m0s
+  timeout: 15m0s
+  wait: true
+  path: ./clusters/rubase/mail-server
+  prune: true
+  dependsOn:
+    - name: infrastructure
+    - name: monitoring
+    - name: bind9
+  decryption:
+    provider: sops
+    secretRef:
+      name: sops-age
+  sourceRef:
+    kind: GitRepository
+    name: flux-system

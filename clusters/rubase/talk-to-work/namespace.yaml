@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: talk-to-work
+  labels:
+    app.kubernetes.io/name: talk-to-work
+    app.kubernetes.io/part-of: talk-to-work

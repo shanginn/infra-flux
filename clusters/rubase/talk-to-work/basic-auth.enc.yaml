@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: Secret
+metadata:
+    name: talk-to-work-basic-auth
+    namespace: talk-to-work
+type: Opaque
+data:
+    users: ENC[AES256_GCM,data:PqiTDfjQXlH10eEmrIzIySLOECwgag8/JMx6iaO6wlA/S8/HjLZRK5+SWUP2ZEfhPzrenNyeajGJAjJwG3ng+Wu3n1eDmoQEi/+D7to0cEWHGKarUjgrmU60uvM=,iv:iKpJJUUQfWpioiZwaGa1+QhnUY4dz8lFPUkN3tNnU6o=,tag:2DOkyztsUqhESfrlHOsPnQ==,type:str]
+sops:
+    age:
+        - recipient: age16qyyuegxwzgwytee9u0fw477zjq4pt5plt877rw45qcx2yl5nujske0fu0
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBBYnhNaldGNFpsamF3R1lE
+            TmRWckpJK09ZNVVPaTRYVEltdDlCL2pPRlM4Cm9XWnViWHhveDV5bzhBV09OQUkw
+            MXpQSUJnZVdzTWNxWTdua3VNODhtdmMKLS0tIDIwN1Btdml5ZzJERFRhaHNXRi9L
+            YmhndmRnZThnVnFWd05OcEkwUXFDeTAKTu2EWsMf3I07Pc4zxIbjxcLyZIEJ7d3u
+            qhagpF1dgVIaqZDwRDSEF7yPsql0+YJH+RzRZ4ekIBB/TnLBNJ2RAw==
+            -----END AGE ENCRYPTED FILE-----
+    lastmodified: "2026-07-19T08:12:05Z"
+    mac: ENC[AES256_GCM,data:fVoqOT715XMohagBSkNiFB5c3xjy/wfPvwt8s/S/MOy0YbLRy8EaVgf5lFyRd3wNKuiBIUzJ4oqsXm/ixcJu5Re1CmkAJ8rD8BQ3leYYYfGzR/kBEewR4SxYrQ75C+O03Hxx55YZYYCzsHMNjXQ5WqgDyC7tFgNVo7c+/SxBwYo=,iv:zdgsR+yWrZcCUXAVs8iole8Mq/wnwpJw4G9Pwn/C5F4=,tag:UCD+1D0CxdlQvbeD8gH9JA==,type:str]
+    encrypted_regex: ^(data|stringData)$
+    version: 3.11.0

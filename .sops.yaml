@@ -1,7 +1,4 @@
 creation_rules:
-  - path_regex: '(^|/)clusters/rubase/talk-to-work/.*\.enc\.yaml$'
-    encrypted_regex: '^(data|stringData)$'
-    age: age16qyyuegxwzgwytee9u0fw477zjq4pt5plt877rw45qcx2yl5nujske0fu0
   - path_regex: '(^|/)mail/secrets/.*\.enc\.yaml$'
     encrypted_regex: '^(data|stringData)$'
     age: age16qyyuegxwzgwytee9u0fw477zjq4pt5plt877rw45qcx2yl5nujske0fu0

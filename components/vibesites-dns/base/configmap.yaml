@@ -51,6 +51,7 @@ data:
     bind_zones:add(newDNSName('shanginn.io.'))
     bind_zones:add(newDNSName('shanginn.ru.'))
     bind_zones:add(newDNSName('sistent.ru.'))
+    bind_zones:add(newDNSName('sputi.ru.'))
     bind_zones:add(newDNSName('vibesites.ru.'))
     bind_zones:add(newDNSName('xn--80aacc0bc7ayl4g.xn--p1ai.'))
     bind_zones:add(newDNSName('xn--80aafk8cdei3c.xn--p1ai.'))

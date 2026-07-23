@@ -1,0 +1,25 @@
+apiVersion: v1
+data:
+    password: ENC[AES256_GCM,data:Nz57C/pB2SRz3l8cRTK9y3MKPwDy28fHHmyUWiCZTZ5b247mFslqdEK3qpeBQP7d2SuWzEWpOUWbYRwprm2/5eTEX7xB7eRO/LJte5574Y9+Zv5f0tSzLg==,iv:XSU/GoLpL1h1q8A8isvJzBh/OuCJ9XSlLRffRCZKX0M=,tag:xhH2/xKySsi0RpS+RpSsNA==,type:str]
+    username: ENC[AES256_GCM,data:p88y8NcSBJ0=,iv:r11/EQDnLZzPvbUup0Ay9gwF4sol/wdayfjTLdFeINc=,tag:vpzXvtGe8yWbHuZ4gvKULg==,type:str]
+kind: Secret
+metadata:
+    creationTimestamp: null
+    name: sputi-db-user
+    namespace: database
+type: kubernetes.io/basic-auth
+sops:
+    age:
+        - recipient: age16qyyuegxwzgwytee9u0fw477zjq4pt5plt877rw45qcx2yl5nujske0fu0
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBkcG9zNDMxdUR6SUF6SEZw
+            MU40WklqWUxzYmhsekVHWHJXaU1ETVFEcHhVCkNBNVRpdHlxMUFqQXNQblVDeUww
+            MDh5MXJMWVZjQTNIUEhKOGwybk9iaXcKLS0tIG5GS0w0ZEZuNGI5NVBFOFFkL3ND
+            SGJEVERRRjZrN1g1eW44RG9pcS9OOG8KxVeSE8EoGaQcnTN1uu1Amd5tQGlXY9Qo
+            vC2LdA8yqxE8NpP27+NVyz+9xcUG3WOUUF2vzIFM7EiE7n0UljD6qA==
+            -----END AGE ENCRYPTED FILE-----
+    lastmodified: "2026-07-23T17:56:06Z"
+    mac: ENC[AES256_GCM,data:AdJHgdjR60oXPW+7PkPxKp3LBUTCKG0FlKA9BLPB7tXnlFQw5R7BO/Np/cCmBpvpz8s2ZeCUGuXq1UPh1AjPl9l1unn3JuP+ZnDqy8/NbXNrd2BQijOfvPxzTfJAXG1jewQn9UpRDIMDN3TLFl98d1Ygt5E+9xzNCqVn+j5K36k=,iv:W3a1RszRV8talskI4m+KIOuEXN8HyHUgp9NL7XyxyT0=,tag:wobXbXXmOPevyG1KQ3inyQ==,type:str]
+    encrypted_regex: ^(data|stringData)$
+    version: 3.11.0

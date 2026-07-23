@@ -54,6 +54,12 @@ zone "sistent.ru" IN {
     allow-update { none; };
 };
 
+zone "sputi.ru" IN {
+    type master;
+    file "/etc/bind/zones/sputi.ru";
+    allow-update { none; };
+};
+
 zone "xn--80ahnllf1ado3f.xn--p1ai" IN {
     type master;
     file "/etc/bind/zones/udalitfon.rf";

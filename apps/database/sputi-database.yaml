@@ -1,0 +1,12 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: sputi
+  namespace: database
+spec:
+  cluster:
+    name: main-db
+  name: sputi
+  owner: sputi
+  ensure: present
+  databaseReclaimPolicy: retain

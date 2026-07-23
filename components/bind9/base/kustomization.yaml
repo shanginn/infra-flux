@@ -32,6 +32,7 @@ configMapGenerator:
       - shanginn.ru=configs/zones/shanginn.ru
       - sistent.rf=configs/zones/sistent.rf
       - sistent.ru=configs/zones/sistent.ru
+      - sputi.ru=configs/zones/sputi.ru
       - udaleniefona.rf=configs/zones/udaleniefona.rf
       - udalitfon.rf=configs/zones/udalitfon.rf
       - vibesites.rf=configs/zones/vibesites.rf

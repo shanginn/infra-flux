@@ -59,6 +59,12 @@ spec:
         createdb: true
         passwordSecret:
           name: restavrach-db-user
+      - name: sputi
+        ensure: present
+        login: true
+        createdb: false
+        passwordSecret:
+          name: sputi-db-user
 
   postgresql:
     parameters:

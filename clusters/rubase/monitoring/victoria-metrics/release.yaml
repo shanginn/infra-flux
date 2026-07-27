@@ -36,16 +36,18 @@ spec:
         resources:
           requests:
             cpu: 100m
-            memory: 256Mi
+            memory: 512Mi
           limits:
             cpu: 500m
-            memory: 512Mi
+            memory: 2Gi
         storage:
           accessModes:
             - ReadWriteOnce
+          storageClassName: monitoring-hdd-local
+          volumeName: victoria-metrics-hdd-pv
           resources:
             requests:
-              storage: 10Gi
+              storage: 20Gi
 
     alertmanager:
       enabled: true

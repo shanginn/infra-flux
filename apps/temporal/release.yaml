@@ -291,6 +291,15 @@ spec:
         system.enableReadFromSecondaryVisibility:
           - value: false
             constraints: {}
+        system.visibilityDisableOrderByClause:
+          - value: false
+            constraints:
+              namespace: default
+          - value: false
+            constraints:
+              namespace: vibesites
+          - value: true
+            constraints: {}
     schema:
       createDatabase:
         enabled: true

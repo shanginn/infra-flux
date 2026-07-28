@@ -3,6 +3,8 @@ kind: HelmRelease
 metadata:
   name: temporal
   namespace: temporal
+  annotations:
+    temporal.shanginn.io/server-image-oci-index: sha256:948e10a83115ff80f0cb5def325603d200dad9e29d59c56fab0896f20fe5eae0
 spec:
   interval: 1h
   postRenderers:
@@ -38,6 +40,176 @@ spec:
                         env:
                           - name: TEMPORAL_ADDRESS
                             value: "temporal-authenticated-frontend.temporal.svc:7233"
+          - target:
+              group: apps
+              version: v1
+              kind: Deployment
+              name: temporal-frontend
+            patch: |
+              apiVersion: apps/v1
+              kind: Deployment
+              metadata:
+                name: temporal-frontend
+              spec:
+                template:
+                  metadata:
+                    annotations:
+                      temporal.shanginn.io/meilisearch-config: c7ff619fad7fc38fac223d315c77796970a3d540e7e2741b0b6665bb77c179b2
+                  spec:
+                    containers:
+                      - name: temporal-frontend
+                        startupProbe:
+                          tcpSocket:
+                            port: rpc
+                          failureThreshold: 360
+                          periodSeconds: 2
+                          timeoutSeconds: 1
+                        readinessProbe:
+                          tcpSocket:
+                            port: rpc
+                          failureThreshold: 3
+                          periodSeconds: 5
+                          timeoutSeconds: 1
+                    volumes:
+                      - name: config
+                        configMap:
+                          name: temporal-meilisearch-config
+          - target:
+              group: apps
+              version: v1
+              kind: Deployment
+              name: temporal-internal-frontend
+            patch: |
+              apiVersion: apps/v1
+              kind: Deployment
+              metadata:
+                name: temporal-internal-frontend
+              spec:
+                template:
+                  metadata:
+                    annotations:
+                      temporal.shanginn.io/meilisearch-config: c7ff619fad7fc38fac223d315c77796970a3d540e7e2741b0b6665bb77c179b2
+                  spec:
+                    containers:
+                      - name: temporal-internal-frontend
+                        startupProbe:
+                          tcpSocket:
+                            port: rpc
+                          failureThreshold: 360
+                          periodSeconds: 2
+                          timeoutSeconds: 1
+                        readinessProbe:
+                          tcpSocket:
+                            port: rpc
+                          failureThreshold: 3
+                          periodSeconds: 5
+                          timeoutSeconds: 1
+                    volumes:
+                      - name: config
+                        configMap:
+                          name: temporal-meilisearch-config
+          - target:
+              group: apps
+              version: v1
+              kind: Deployment
+              name: temporal-history
+            patch: |
+              apiVersion: apps/v1
+              kind: Deployment
+              metadata:
+                name: temporal-history
+              spec:
+                template:
+                  metadata:
+                    annotations:
+                      temporal.shanginn.io/meilisearch-config: c7ff619fad7fc38fac223d315c77796970a3d540e7e2741b0b6665bb77c179b2
+                  spec:
+                    containers:
+                      - name: temporal-history
+                        startupProbe:
+                          tcpSocket:
+                            port: rpc
+                          failureThreshold: 360
+                          periodSeconds: 2
+                          timeoutSeconds: 1
+                        readinessProbe:
+                          tcpSocket:
+                            port: rpc
+                          failureThreshold: 3
+                          periodSeconds: 5
+                          timeoutSeconds: 1
+                    volumes:
+                      - name: config
+                        configMap:
+                          name: temporal-meilisearch-config
+          - target:
+              group: apps
+              version: v1
+              kind: Deployment
+              name: temporal-matching
+            patch: |
+              apiVersion: apps/v1
+              kind: Deployment
+              metadata:
+                name: temporal-matching
+              spec:
+                template:
+                  metadata:
+                    annotations:
+                      temporal.shanginn.io/meilisearch-config: c7ff619fad7fc38fac223d315c77796970a3d540e7e2741b0b6665bb77c179b2
+                  spec:
+                    containers:
+                      - name: temporal-matching
+                        startupProbe:
+                          tcpSocket:
+                            port: rpc
+                          failureThreshold: 360
+                          periodSeconds: 2
+                          timeoutSeconds: 1
+                        readinessProbe:
+                          tcpSocket:
+                            port: rpc
+                          failureThreshold: 3
+                          periodSeconds: 5
+                          timeoutSeconds: 1
+                    volumes:
+                      - name: config
+                        configMap:
+                          name: temporal-meilisearch-config
+          - target:
+              group: apps
+              version: v1
+              kind: Deployment
+              name: temporal-worker
+            patch: |
+              apiVersion: apps/v1
+              kind: Deployment
+              metadata:
+                name: temporal-worker
+              spec:
+                template:
+                  metadata:
+                    annotations:
+                      temporal.shanginn.io/meilisearch-config: c7ff619fad7fc38fac223d315c77796970a3d540e7e2741b0b6665bb77c179b2
+                  spec:
+                    containers:
+                      - name: temporal-worker
+                        startupProbe:
+                          tcpSocket:
+                            port: membership
+                          failureThreshold: 360
+                          periodSeconds: 2
+                          timeoutSeconds: 1
+                        readinessProbe:
+                          tcpSocket:
+                            port: membership
+                          failureThreshold: 3
+                          periodSeconds: 5
+                          timeoutSeconds: 1
+                    volumes:
+                      - name: config
+                        configMap:
+                          name: temporal-meilisearch-config
   chart:
     spec:
       chart: temporal
@@ -59,9 +231,15 @@ spec:
     server:
       replicaCount: 1
       image:
-        repository: temporalio/server
-        tag: "1.29.6.1"
-        pullPolicy: IfNotPresent
+        repository: rubase.local/temporal-meilisearch
+        tag: "rubase-v1.29.6.1-ac66573"
+        pullPolicy: Never
+      additionalEnv:
+        - name: MEILI_MASTER_KEY
+          valueFrom:
+            secretKeyRef:
+              name: meilisearch
+              key: master-key
       internalFrontend:
         enabled: true
         service:
@@ -90,8 +268,8 @@ spec:
               user: "temporal_user"
               password: "" # Password managed by secret
               existingSecret: "temporal-db-user"
-              maxConns: 5
-              maxIdleConns: 2
+              maxConns: 2
+              maxIdleConns: 1
               maxConnLifetime: "1h"
           visibility:
             driver: "sql"
@@ -103,9 +281,16 @@ spec:
               user: "temporal_user"
               password: "" # Password managed by secret
               existingSecret: "temporal-db-user"
-              maxConns: 5
-              maxIdleConns: 2
+              maxConns: 2
+              maxIdleConns: 1
               maxConnLifetime: "1h"
+      dynamicConfig:
+        system.secondaryVisibilityWritingMode:
+          - value: "off"
+            constraints: {}
+        system.enableReadFromSecondaryVisibility:
+          - value: false
+            constraints: {}
     schema:
       createDatabase:
         enabled: true

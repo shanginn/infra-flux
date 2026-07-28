@@ -60,7 +60,7 @@ data:
               postgresUser: temporal_user
               postgresPasswordEnv: TEMPORAL_VISIBILITY_STORE_PASSWORD
               postgresSSLMode: disable
-              postgresMaxConns: 1
+              postgresMaxConns: 2
               enableContainsFilter: true
               taskTimeout: 2m
               taskPollInterval: 50ms

@@ -86,7 +86,8 @@ spec:
               user: "temporal_user"
               password: "" # Password managed by secret
               existingSecret: "temporal-db-user"
-              maxConns: 20
+              maxConns: 5
+              maxIdleConns: 2
               maxConnLifetime: "1h"
           visibility:
             driver: "sql"
@@ -98,7 +99,8 @@ spec:
               user: "temporal_user"
               password: "" # Password managed by secret
               existingSecret: "temporal-db-user"
-              maxConns: 20
+              maxConns: 5
+              maxIdleConns: 2
               maxConnLifetime: "1h"
     schema:
       createDatabase:

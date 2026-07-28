@@ -44,6 +44,7 @@ spec:
     spec:
       serviceAccountName: temporal-local-auth
       automountServiceAccountToken: false
+      enableServiceLinks: false
       securityContext:
         runAsNonRoot: true
         runAsUser: 10001
@@ -69,6 +70,8 @@ spec:
               value: "/data/signing-key.pem"
             - name: TEMPORAL_AUTH_ISSUER
               value: "https://temporal.rubase.shanginn.io"
+            - name: TEMPORAL_AUTH_AUDIENCE
+              value: "temporal-rubase"
             - name: TEMPORAL_AUTH_SESSION_TTL
               value: "12h"
             - name: TEMPORAL_AUTH_PROXY_TOKEN_TTL
@@ -105,18 +108,18 @@ spec:
             timeoutSeconds: 2
           readinessProbe:
             httpGet:
-              path: /readyz
+              path: /.well-known/jwks.json
               port: http
             failureThreshold: 3
             periodSeconds: 5
             timeoutSeconds: 3
           resources:
             requests:
-              cpu: 25m
-              memory: 32Mi
+              cpu: 250m
+              memory: 384Mi
             limits:
-              cpu: 500m
-              memory: 128Mi
+              cpu: "2"
+              memory: 768Mi
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
@@ -178,9 +181,11 @@ spec:
     - Ingress
   ingress:
     - from:
-        - namespaceSelector:
+        - podSelector:
             matchLabels:
-              kubernetes.io/metadata.name: temporal
+              app.kubernetes.io/name: temporal
+              app.kubernetes.io/instance: temporal
+              app.kubernetes.io/component: frontend
       ports:
         - port: 8080
           protocol: TCP
@@ -201,6 +206,19 @@ spec:
   ingress:
     - from:
         - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: temporal
+      ports:
+        - port: 6936
+          protocol: TCP
+        - port: 7236
+          protocol: TCP
+        - port: 7246
+          protocol: TCP
+        - port: 9090
+          protocol: TCP
+    - from:
+        - namespaceSelector:
             matchExpressions:
               - key: kubernetes.io/metadata.name
                 operator: In
@@ -210,7 +228,6 @@ spec:
                   - mystaro
                   - primerochka
                   - restavrach
-                  - temporal
                   - vibesites
                   - vibesites-pi
       ports:

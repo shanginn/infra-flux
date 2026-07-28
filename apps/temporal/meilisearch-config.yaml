@@ -1,0 +1,146 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: temporal-meilisearch-config
+  namespace: temporal
+  labels:
+    app.kubernetes.io/name: temporal
+    app.kubernetes.io/instance: temporal
+    app.kubernetes.io/part-of: temporal
+data:
+  config_template.yaml: |-
+    log:
+      stdout: true
+      level: "debug,info"
+
+    persistence:
+      defaultStore: default
+      visibilityStore: visibility
+      secondaryVisibilityStore: meilisearch-visibility
+      numHistoryShards: 512
+      datastores:
+        default:
+          sql:
+            pluginName: "postgres12"
+            driverName: "postgres12"
+            databaseName: "temporal"
+            connectAddr: "main-db-rw.database.svc.cluster.local:5432"
+            connectProtocol: "tcp"
+            user: temporal_user
+            password: {{ .Env.TEMPORAL_STORE_PASSWORD | quote }}
+            maxConnLifetime: 1h
+            maxConns: 2
+            maxIdleConns: 1
+            secretName: ""
+        visibility:
+          sql:
+            pluginName: "postgres12"
+            driverName: "postgres12"
+            databaseName: "temporal_visibility"
+            connectAddr: "main-db-rw.database.svc.cluster.local:5432"
+            connectProtocol: "tcp"
+            user: "temporal_user"
+            password: {{ .Env.TEMPORAL_VISIBILITY_STORE_PASSWORD | quote }}
+            maxConnLifetime: 1h
+            maxConns: 2
+            maxIdleConns: 1
+            secretName: ""
+        meilisearch-visibility:
+          customDatastore:
+            name: meilisearch
+            options:
+              indexName: temporal_visibility_meilisearch_v1
+              address: "http://meilisearch.temporal.svc.cluster.local:7700"
+              apiKeyEnv: MEILI_MASTER_KEY
+              searchAttributesIndexName: temporal_visibility
+              coordinator: postgres
+              postgresHost: main-db-rw.database.svc.cluster.local
+              postgresPort: 5432
+              postgresDatabase: temporal_visibility
+              postgresUser: temporal_user
+              postgresPasswordEnv: TEMPORAL_VISIBILITY_STORE_PASSWORD
+              postgresSSLMode: disable
+              postgresMaxConns: 1
+              enableContainsFilter: true
+              taskTimeout: 2m
+              taskPollInterval: 50ms
+              startupTimeout: 10m
+              maxTotalHits: 20000
+              maxValuesPerFacet: 1000
+
+    global:
+      membership:
+        name: temporal
+        maxJoinDuration: 30s
+        broadcastAddress: {{ default .Env.POD_IP "0.0.0.0" }}
+
+      pprof:
+        port: 7936
+
+      metrics:
+        tags:
+          type: {{ .Env.SERVICES }}
+        prometheus:
+          timerType: histogram
+          listenAddress: "0.0.0.0:9090"
+      authorization:
+        audience: temporal-rubase
+        authorizer: default
+        claimMapper: default
+        jwtKeyProvider:
+          keySourceURIs:
+            - http://temporal-local-auth.temporal.svc.cluster.local:8080/.well-known/jwks.json
+          refreshInterval: 1m
+        permissionsClaimName: permissions
+
+    services:
+      frontend:
+        rpc:
+          grpcPort: 7233
+          httpPort: 7243
+          membershipPort: 6933
+          bindOnIP: "0.0.0.0"
+      internal-frontend:
+        rpc:
+          grpcPort: 7233
+          httpPort: 7246
+          membershipPort: 6936
+          bindOnIP: "0.0.0.0"
+      history:
+        rpc:
+          grpcPort: 7234
+          membershipPort: 6934
+          bindOnIP: "0.0.0.0"
+      matching:
+        rpc:
+          grpcPort: 7235
+          membershipPort: 6935
+          bindOnIP: "0.0.0.0"
+      worker:
+        rpc:
+          membershipPort: 6939
+          bindOnIP: "0.0.0.0"
+
+    clusterMetadata:
+      enableGlobalDomain: false
+      failoverVersionIncrement: 10
+      masterClusterName: "active"
+      currentClusterName: "active"
+      clusterInformation:
+        active:
+          enabled: true
+          initialFailoverVersion: 1
+          rpcName: "temporal-frontend"
+          rpcAddress: "127.0.0.1:7233"
+          httpAddress: "127.0.0.1:7243"
+
+    dcRedirectionPolicy:
+      policy: "noop"
+      toDC: ""
+
+    archival:
+      status: "disabled"
+
+    dynamicConfigClient:
+      filepath: "/etc/temporal/dynamic_config/dynamic_config.yaml"
+      pollInterval: "10s"

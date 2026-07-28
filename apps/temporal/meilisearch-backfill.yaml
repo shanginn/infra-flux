@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: temporal-meilisearch-backfill-dry-run-v2
+  name: temporal-meilisearch-backfill-initial-v1
   namespace: temporal
   annotations:
     temporal.shanginn.io/image-oci-index: sha256:948e10a83115ff80f0cb5def325603d200dad9e29d59c56fab0896f20fe5eae0
@@ -55,8 +55,7 @@ spec:
                 --source-user temporal_user \
                 --source-password-env TEMPORAL_VISIBILITY_STORE_PASSWORD \
                 --source-sslmode disable \
-                --batch-size 500 \
-                --dry-run
+                --batch-size 500
           env:
             - name: TEMPORAL_STORE_PASSWORD
               valueFrom:

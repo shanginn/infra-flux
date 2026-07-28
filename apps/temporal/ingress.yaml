@@ -23,10 +23,10 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: temporal-local-auth
+  name: temporal-ui
   namespace: temporal
   annotations:
-    traefik.ingress.kubernetes.io/router.middlewares: kube-system-temporal-redirect-https@kubernetescrd
+    traefik.ingress.kubernetes.io/router.middlewares: kube-system-temporal-redirect-https@kubernetescrd,kube-system-temporal-security-headers@kubernetescrd
     traefik.ingress.kubernetes.io/router.priority: "100"
 spec:
   ingressClassName: traefik
@@ -35,6 +35,133 @@ spec:
       http:
         paths:
           - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: temporal-web
+                port:
+                  number: 8080
+  tls:
+    - secretName: temporal-tls
+      hosts:
+        - temporal.rubase.shanginn.io
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: temporal-ui-auth
+  namespace: temporal
+  annotations:
+    traefik.ingress.kubernetes.io/router.middlewares: kube-system-temporal-redirect-https@kubernetescrd,kube-system-temporal-security-headers@kubernetescrd
+    traefik.ingress.kubernetes.io/router.priority: "300"
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: temporal.rubase.shanginn.io
+      http:
+        paths:
+          # Temporal UI v2.42.1 owns these routes. The auth service forwards
+          # them unchanged and adds Secure to the UI's temporary cookies.
+          - path: /auth/sso
+            pathType: Prefix
+            backend:
+              service:
+                name: temporal-local-auth
+                port:
+                  number: 8080
+          - path: /auth/sso_callback
+            pathType: Exact
+            backend:
+              service:
+                name: temporal-local-auth
+                port:
+                  number: 8080
+  tls:
+    - secretName: temporal-tls
+      hosts:
+        - temporal.rubase.shanginn.io
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: temporal-local-auth
+  namespace: temporal
+  annotations:
+    traefik.ingress.kubernetes.io/router.middlewares: kube-system-temporal-redirect-https@kubernetescrd,kube-system-temporal-security-headers@kubernetescrd
+    traefik.ingress.kubernetes.io/router.priority: "200"
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: temporal.rubase.shanginn.io
+      http:
+        paths:
+          # Native identity-provider and management routes.
+          - path: /.well-known
+            pathType: Prefix
+            backend:
+              service:
+                name: temporal-local-auth
+                port:
+                  number: 8080
+          - path: /identity
+            pathType: Prefix
+            backend:
+              service:
+                name: temporal-local-auth
+                port:
+                  number: 8080
+          - path: /oauth
+            pathType: Prefix
+            backend:
+              service:
+                name: temporal-local-auth
+                port:
+                  number: 8080
+          # Backward-compatible local-auth routes. Keep these explicit so
+          # Temporal UI's /auth/sso routes can never be shadowed.
+          - path: /auth
+            pathType: Exact
+            backend:
+              service:
+                name: temporal-local-auth
+                port:
+                  number: 8080
+          - path: /auth/
+            pathType: Exact
+            backend:
+              service:
+                name: temporal-local-auth
+                port:
+                  number: 8080
+          - path: /auth/login
+            pathType: Exact
+            backend:
+              service:
+                name: temporal-local-auth
+                port:
+                  number: 8080
+          - path: /auth/logout
+            pathType: Exact
+            backend:
+              service:
+                name: temporal-local-auth
+                port:
+                  number: 8080
+          - path: /auth/token
+            pathType: Exact
+            backend:
+              service:
+                name: temporal-local-auth
+                port:
+                  number: 8080
+          - path: /auth/account
+            pathType: Prefix
+            backend:
+              service:
+                name: temporal-local-auth
+                port:
+                  number: 8080
+          - path: /auth/admin
             pathType: Prefix
             backend:
               service:

@@ -312,6 +312,29 @@ spec:
       additionalEnv:
         - name: TEMPORAL_CORS_ORIGINS
           value: "https://temporal.rubase.shanginn.io"
+        - name: TEMPORAL_AUTH_ENABLED
+          value: "true"
+        - name: TEMPORAL_AUTH_LABEL
+          value: "Temporal"
+        - name: TEMPORAL_AUTH_TYPE
+          value: "oidc"
+        - name: TEMPORAL_AUTH_PROVIDER_URL
+          value: "http://temporal-local-auth.temporal.svc.cluster.local:8080"
+        - name: TEMPORAL_AUTH_ISSUER_URL
+          value: "https://temporal.rubase.shanginn.io"
+        - name: TEMPORAL_AUTH_CLIENT_ID
+          value: "temporal-ui"
+        - name: TEMPORAL_AUTH_CLIENT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: temporal-local-auth-oidc
+              key: client-secret
+        - name: TEMPORAL_AUTH_CALLBACK_URL
+          value: "https://temporal.rubase.shanginn.io/auth/sso/callback"
+        - name: TEMPORAL_AUTH_USE_ID_TOKEN_AS_BEARER
+          value: "false"
+        - name: TEMPORAL_AUTH_SCOPES
+          value: "openid,profile,email"
       ingress:
         enabled: false
         className: traefik

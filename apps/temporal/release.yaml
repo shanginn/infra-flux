@@ -286,7 +286,7 @@ spec:
               maxConnLifetime: "1h"
       dynamicConfig:
         system.secondaryVisibilityWritingMode:
-          - value: "off"
+          - value: "dual"
             constraints: {}
         system.enableReadFromSecondaryVisibility:
           - value: false

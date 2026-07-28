@@ -66,6 +66,15 @@ spec:
         enabled: true
       config:
         numHistoryShards: 512
+        authorization:
+          jwtKeyProvider:
+            keySourceURIs:
+              - "http://temporal-local-auth.temporal.svc.cluster.local:8080/.well-known/jwks.json"
+            refreshInterval: 1m
+          permissionsClaimName: permissions
+          audience: temporal-rubase
+          authorizer: default
+          claimMapper: default
         persistence:
           default:
             driver: "sql"
@@ -110,7 +119,7 @@ spec:
         - name: TEMPORAL_CORS_ORIGINS
           value: "https://temporal.rubase.shanginn.io"
       ingress:
-        enabled: true
+        enabled: false
         className: traefik
         annotations:
           cert-manager.io/cluster-issuer: letsencrypt-prod

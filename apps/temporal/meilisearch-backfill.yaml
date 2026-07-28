@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: temporal-meilisearch-backfill-initial-v1
+  name: temporal-meilisearch-backfill-reconcile-v1
   namespace: temporal
   annotations:
     temporal.shanginn.io/image-oci-index: sha256:948e10a83115ff80f0cb5def325603d200dad9e29d59c56fab0896f20fe5eae0

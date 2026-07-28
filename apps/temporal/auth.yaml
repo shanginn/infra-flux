@@ -55,7 +55,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: temporal-local-auth
-          image: docker.io/shanginn/temporal-local-auth@sha256:76bf648c26985e5937f6f7a93ca38bc411b9334c9d3429f85bf53fe27ebc887f
+          image: docker.io/shanginn/temporal-local-auth@sha256:a8b00c7538f4dbaf2988cc300f66e23553c64e5fc181b3346068f855cc9ff36f
           imagePullPolicy: IfNotPresent
           env:
             - name: TEMPORAL_AUTH_LISTEN_ADDRESS
@@ -82,6 +82,17 @@ spec:
               value: "2m"
             - name: TEMPORAL_AUTH_API_TOKEN_TTL
               value: "15m"
+            - name: TEMPORAL_AUTH_REFRESH_TOKEN_TTL
+              value: "720h"
+            - name: TEMPORAL_AUTH_OIDC_CLIENT_ID
+              value: "temporal-ui"
+            - name: TEMPORAL_AUTH_OIDC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: temporal-local-auth-oidc
+                  key: client-secret
+            - name: TEMPORAL_AUTH_OIDC_REDIRECT_URL
+              value: "https://temporal.rubase.shanginn.io/auth/sso/callback"
             - name: TEMPORAL_AUTH_COOKIE_SECURE
               value: "true"
             - name: TEMPORAL_AUTH_TRUSTED_PROXY_CIDRS

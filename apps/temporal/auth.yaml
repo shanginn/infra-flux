@@ -166,12 +166,13 @@ spec:
   policyTypes:
     - Ingress
   ingress:
+    # Temporal initializes its JWT key provider in every server role, even
+    # though authorization decisions are made at the frontend boundary.
     - from:
         - podSelector:
             matchLabels:
               app.kubernetes.io/name: temporal
               app.kubernetes.io/instance: temporal
-              app.kubernetes.io/component: frontend
       ports:
         - port: 8080
           protocol: TCP

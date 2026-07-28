@@ -289,6 +289,12 @@ spec:
           - value: "dual"
             constraints: {}
         system.enableReadFromSecondaryVisibility:
+          - value: true
+            constraints:
+              namespace: default
+          - value: true
+            constraints:
+              namespace: vibesites
           - value: false
             constraints: {}
         system.visibilityDisableOrderByClause:

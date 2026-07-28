@@ -55,7 +55,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: temporal-local-auth
-          image: docker.io/shanginn/temporal-local-auth@sha256:a8b00c7538f4dbaf2988cc300f66e23553c64e5fc181b3346068f855cc9ff36f
+          image: docker.io/shanginn/temporal-local-auth@sha256:44be41f7d86c8247de9c8f8a4de7e6e9baf616668db72fe2a391c3654edd35e5
           imagePullPolicy: IfNotPresent
           env:
             - name: TEMPORAL_AUTH_LISTEN_ADDRESS

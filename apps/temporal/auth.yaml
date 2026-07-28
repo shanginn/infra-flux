@@ -55,7 +55,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: temporal-local-auth
-          image: docker.io/shanginn/temporal-local-auth@sha256:af74e5f94eb1bf97b6837ea45df369e969f94c0c578f0f691c2c2aaea0f66e46
+          image: docker.io/shanginn/temporal-local-auth@sha256:23668ebddcae39f5210d9e6431f4c81b416c090bce75b809607336b370be853a
           imagePullPolicy: IfNotPresent
           env:
             - name: TEMPORAL_AUTH_LISTEN_ADDRESS
@@ -64,6 +64,10 @@ spec:
               value: "http://temporal-web:8080"
             - name: TEMPORAL_AUTH_PUBLIC_URL
               value: "https://temporal.rubase.shanginn.io"
+            - name: TEMPORAL_AUTH_GRPC_ADDRESS
+              value: "temporal-grpc.rubase.shanginn.io:443"
+            - name: TEMPORAL_AUTH_GRPC_TLS
+              value: "true"
             - name: TEMPORAL_AUTH_DATABASE_PATH
               value: "/data/temporal-auth.db"
             - name: TEMPORAL_AUTH_SIGNING_KEY_PATH

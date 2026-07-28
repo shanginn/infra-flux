@@ -1,10 +1,31 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: temporal-tls
+  namespace: temporal
+spec:
+  secretName: temporal-tls
+  issuerRef:
+    group: cert-manager.io
+    kind: ClusterIssuer
+    name: letsencrypt-prod
+  privateKey:
+    algorithm: RSA
+    size: 2048
+    rotationPolicy: Always
+  usages:
+    - digital signature
+    - key encipherment
+    - server auth
+  dnsNames:
+    - temporal.rubase.shanginn.io
+---
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: temporal-local-auth
   namespace: temporal
   annotations:
-    cert-manager.io/cluster-issuer: letsencrypt-prod
     traefik.ingress.kubernetes.io/router.middlewares: kube-system-temporal-redirect-https@kubernetescrd
     traefik.ingress.kubernetes.io/router.priority: "100"
 spec:

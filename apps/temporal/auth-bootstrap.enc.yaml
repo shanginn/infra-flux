@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: Secret
+metadata:
+    name: temporal-local-auth-bootstrap
+    namespace: temporal
+type: Opaque
+stringData:
+    bootstrap-password: ENC[AES256_GCM,data:hUwFEuKpHhrveWlYpe75ORv/dUppxbAPmy0IDi4FYxPjEb3As7f77CVjSZIqXABrkg==,iv:frxzWEaYTxA7MRyQTKLafzNyGuouw7wTc0iVOyKiGCw=,tag:Z/6wV59x2DzVjtxSM0XLIQ==,type:str]
+sops:
+    age:
+        - recipient: age16qyyuegxwzgwytee9u0fw477zjq4pt5plt877rw45qcx2yl5nujske0fu0
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBvMTlxV0VleW5vNk9xc2Ir
+            WXNHVE9CbXhjR3V5YkQ2emNyNEd4UE9xTnk0Cks1SGx3dlJWRGQwS1VkSFlhYWw0
+            RGQ5SzNFNG9YelV1bWtwaUVZUlZoWEEKLS0tIHEwbjhUNWwrU2QrYVhheWVzb3Uy
+            eU92OE5KTEtYT01kTXNVaHNWQ09IMjgKSXRwseB1pGyLrdfK9WjHgOb0ADZ2Apyn
+            wTe6LzPwxOUl60iceV6LUR8SN+kvNKr+h9HTgipsHqlYNj20nRO0qg==
+            -----END AGE ENCRYPTED FILE-----
+    lastmodified: "2026-07-28T10:19:35Z"
+    mac: ENC[AES256_GCM,data:fQytnMAaMbj6qYsHHADNS1K0oMiyJB0ubIlHUKj1FbpByGA+V6xlVD+obJKO6iX3BxTUipM4bWTQUQWn/moH/DzqhUglfHj73p0I5CAuxlr8lQXbaAIzySUBjbcK87cvzm4oGeYmet7mNT4gcXRDe2166fUr8W8a7B9xwjvuDRQ=,iv:n3iD9r9xRQs7ZHkZjC/e57fGQGpTqKhqZA1PBYedeZI=,tag:JPt+tPWWwkCuOhoK1Z/fUA==,type:str]
+    encrypted_regex: ^(data|stringData)$
+    version: 3.11.0

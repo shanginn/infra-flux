@@ -25,6 +25,12 @@ spec:
       name: "temporal"
     server:
       replicaCount: 1
+      image:
+        repository: temporalio/server
+        tag: "1.29.6.1"
+        pullPolicy: IfNotPresent
+      internalFrontend:
+        enabled: true
       config:
         numHistoryShards: 512
         persistence:
@@ -61,8 +67,15 @@ spec:
         enabled: true
     admintools:
       enabled: true
+      image:
+        repository: temporalio/admin-tools
+        tag: "1.29.6.1-tctl-1.18.4-cli-1.7.0"
+        pullPolicy: IfNotPresent
     web:
       enabled: true
+      additionalEnv:
+        - name: TEMPORAL_CORS_ORIGINS
+          value: "https://temporal.rubase.shanginn.io"
       ingress:
         enabled: true
         className: traefik

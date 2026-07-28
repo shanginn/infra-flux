@@ -14,15 +14,17 @@ spec:
       restartPolicy: OnFailure
       containers:
         - name: temporal-cli
-          image: temporalio/admin-tools:1.29.1-tctl-1.18.4-cli-1.5.0
+          image: temporalio/admin-tools:1.29.6.1-tctl-1.18.4-cli-1.7.0
           env:
             - name: TEMPORAL_CLI_ADDRESS
-              value: "temporal-frontend:7233"
+              value: "temporal-internal-frontend:7236"
             - name: NAMESPACES
-              value: "default,primerochka,genera4,sistent,mystaro,vibesites,restavrach" # Comma separated list of namespaces
+              value: "default,primerochka,genera4,sistent,mystaro,vibesites,restavrach,flowerswork"
           command: ["/bin/bash", "-c"]
           args:
             - |
+              set -euo pipefail
+
               echo "Waiting for Temporal Frontend..."
               until tctl cluster health | grep -q "SERVING"; do
                 echo "Waiting for temporal..."
@@ -31,9 +33,18 @@ spec:
 
               IFS=',' read -ra NS_LIST <<< "$NAMESPACES"
               for ns in "${NS_LIST[@]}"; do
+                if temporal operator namespace describe \
+                  --namespace "$ns" \
+                  --address "$TEMPORAL_CLI_ADDRESS" >/dev/null 2>&1; then
+                  echo "Namespace '$ns' already exists."
+                  continue
+                fi
+
                 echo "Registering '$ns' namespace..."
-                # Try to register, ignore error if already exists
-                temporal operator namespace create --namespace "$ns" --retention 3d --address "$TEMPORAL_CLI_ADDRESS" || true
+                temporal operator namespace create \
+                  --namespace "$ns" \
+                  --retention 3d \
+                  --address "$TEMPORAL_CLI_ADDRESS"
               done
-              
+
               echo "Done!"

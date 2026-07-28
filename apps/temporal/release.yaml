@@ -125,7 +125,7 @@ spec:
         className: traefik
         annotations:
           cert-manager.io/cluster-issuer: letsencrypt-prod
-          traefik.ingress.kubernetes.io/router.middlewares: kube-system-temporal-basic-auth@kubernetescrd
+          traefik.ingress.kubernetes.io/router.middlewares: kube-system-temporal-redirect-https@kubernetescrd
         hosts:
           - "temporal.shanginn.io"
         tls:

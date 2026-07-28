@@ -64,6 +64,10 @@ spec:
         pullPolicy: IfNotPresent
       internalFrontend:
         enabled: true
+        service:
+          # Keep the established worker destination port. NetworkPolicy
+          # implementations evaluate the post-Service pod port.
+          port: 7233
       config:
         numHistoryShards: 512
         authorization:

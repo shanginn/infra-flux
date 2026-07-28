@@ -17,7 +17,7 @@ spec:
           image: temporalio/admin-tools:1.29.6.1-tctl-1.18.4-cli-1.7.0
           env:
             - name: TEMPORAL_CLI_ADDRESS
-              value: "temporal-internal-frontend:7236"
+              value: "temporal-internal-frontend:7233"
             - name: NAMESPACES
               value: "default,primerochka,genera4,sistent,mystaro,vibesites,restavrach,flowerswork"
           command: ["/bin/bash", "-c"]

@@ -207,7 +207,7 @@ spec:
       ports:
         - port: 6936
           protocol: TCP
-        - port: 7236
+        - port: 7233
           protocol: TCP
         - port: 7246
           protocol: TCP
@@ -227,5 +227,5 @@ spec:
                   - vibesites
                   - vibesites-pi
       ports:
-        - port: 7236
+        - port: 7233
           protocol: TCP

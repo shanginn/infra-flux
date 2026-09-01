@@ -5,7 +5,7 @@ metadata:
   namespace: generach
   annotations:
     cert-manager.io/cluster-issuer: letsencrypt-prod
-    nginx.ingress.kubernetes.io/auth-tls-secret: temporal/temporal-macos-worker-gateway-tls
+    nginx.ingress.kubernetes.io/auth-tls-secret: generach/temporal-macos-worker-client-ca
     nginx.ingress.kubernetes.io/auth-tls-verify-client: optional
     nginx.ingress.kubernetes.io/auth-tls-verify-depth: "1"
     nginx.ingress.kubernetes.io/force-ssl-redirect: "true"

@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: temporal-macos-worker-client-ca
+  namespace: generach
+type: Opaque
+stringData:
+  ca.crt: |
+    -----BEGIN CERTIFICATE-----
+    MIIBoDCCAUegAwIBAgIUKN6hKjJ3eDV9ELmD3VKmJOAFq6QwCgYIKoZIzj0EAwIw
+    JjEkMCIGA1UEAwwbR2VuZXJhY2ggVGVtcG9yYWwgV29ya2VyIENBMB4XDTI2MDkw
+    MTA5MDkyOVoXDTM2MDgyOTA5MDkyOVowJjEkMCIGA1UEAwwbR2VuZXJhY2ggVGVt
+    cG9yYWwgV29ya2VyIENBMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEtWH8+QoL
+    MrLnVDy8hxMH7F2iPhSVHDD7zq04sdQoXG50l2M4LFvr7nPpaj3m+gE6EDrmRCex
+    pHkpxMaYamSkFaNTMFEwHQYDVR0OBBYEFP4hlO/YB/EsSNhFqhiiGjIsx0z5MB8G
+    A1UdIwQYMBaAFP4hlO/YB/EsSNhFqhiiGjIsx0z5MA8GA1UdEwEB/wQFMAMBAf8w
+    CgYIKoZIzj0EAwIDRwAwRAIgSe1lO15TfjderpGeyzoBWAcCbMhG/0J6LTTb6ujR
+    8vsCIEeRvCO1+hQEjCViWvXIjDl5uaAMabrkE4GMvy9MLWNT
+    -----END CERTIFICATE-----

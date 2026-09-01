@@ -1,0 +1,21 @@
+services:
+  temporal-forwarder:
+    image: alpine/socat@sha256:5f275aa1b6e9889c851f61097142ee050fc6ac4615b4ea64ac1f2b0e81ff8d7f
+    container_name: generach-temporal-mtls-forwarder
+    network_mode: host
+    restart: unless-stopped
+    read_only: true
+    user: "65534:65534"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    command:
+      - TCP-LISTEN:7233,bind=84.247.177.201,reuseaddr,fork,nodelay,keepalive,keepidle=10,keepintvl=5,keepcnt=3
+      - TCP:192.168.49.2:30733,nodelay,keepalive,keepidle=10,keepintvl=5,keepcnt=3
+    healthcheck:
+      test: ["CMD", "socat", "-V"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    stop_grace_period: 10s

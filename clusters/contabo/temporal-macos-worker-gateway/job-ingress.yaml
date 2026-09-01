@@ -1,0 +1,28 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: generach-inswapper-jobs-mtls
+  namespace: generach
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/auth-tls-secret: temporal/temporal-macos-worker-gateway-tls
+    nginx.ingress.kubernetes.io/auth-tls-verify-client: optional
+    nginx.ingress.kubernetes.io/auth-tls-verify-depth: "1"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - inswapper.generach.ru
+      secretName: generach-inswapper-jobs-tls
+  rules:
+    - host: inswapper.generach.ru
+      http:
+        paths:
+          - path: /__telegram-bot-webhook/inswapper-jobs
+            pathType: Exact
+            backend:
+              service:
+                name: python-bot
+                port:
+                  name: webhook

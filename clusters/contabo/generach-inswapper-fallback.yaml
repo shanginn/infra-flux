@@ -1,0 +1,20 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: generach-inswapper-fallback
+  namespace: flux-system
+spec:
+  interval: 10m0s
+  retryInterval: 1m0s
+  timeout: 30m0s
+  wait: true
+  path: ./clusters/contabo/generach-inswapper-fallback
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: generach-inswapper-cpu-fallback
+      namespace: generach

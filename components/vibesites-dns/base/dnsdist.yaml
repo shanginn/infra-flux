@@ -15,7 +15,7 @@ spec:
   template:
     metadata:
       annotations:
-        infra.shanginn.io/dnsdist-config-revision: "2026072301"
+        infra.shanginn.io/dnsdist-config-revision: "2026091101"
       labels:
         app: dnsdist
         app.kubernetes.io/name: dnsdist

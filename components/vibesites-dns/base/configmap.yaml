@@ -56,6 +56,7 @@ data:
     bind_zones:add(newDNSName('xn--80aacc0bc7ayl4g.xn--p1ai.'))
     bind_zones:add(newDNSName('xn--80aafk8cdei3c.xn--p1ai.'))
     bind_zones:add(newDNSName('xn--80aakfartrcj1ct.xn--p1ai.'))
+    bind_zones:add(newDNSName('xn--80aao3bdhk2b9b.xn--p1ai.'))
     bind_zones:add(newDNSName('xn--80afga3bt4c.xn--p1ai.'))
     bind_zones:add(newDNSName('xn--80ahnllf1ado3f.xn--p1ai.'))
     bind_zones:add(newDNSName('xn--80ajijindid5e.xn--p1ai.'))

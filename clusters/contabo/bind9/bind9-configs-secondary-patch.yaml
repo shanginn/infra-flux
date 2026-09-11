@@ -139,3 +139,9 @@ data:
         file "/etc/bind/zones/aufstaff.ru";
         allow-update { none; };
     };
+
+    zone "xn--80aao3bdhk2b9b.xn--p1ai" IN {
+        type master;
+        file "/etc/bind/zones/raspechat.rf";
+        allow-update { none; };
+    };

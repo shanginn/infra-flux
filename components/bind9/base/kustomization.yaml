@@ -26,6 +26,7 @@ configMapGenerator:
       - minijurnal.rf=configs/zones/minijurnal.rf
       - mystaro.ru=configs/zones/mystaro.ru
       - primerochka.rf=configs/zones/primerochka.rf
+      - raspechat.rf=configs/zones/raspechat.rf
       - restavrach.rf=configs/zones/restavrach.rf
       - shanghaiauto.ru=configs/zones/shanghaiauto.ru
       - shanginn.io=configs/zones/shanginn.io

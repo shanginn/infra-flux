@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: raspechat-oauth-public-v1
+  namespace: raspechat
+  labels:
+    app.kubernetes.io/name: raspechat
+    app.kubernetes.io/component: oauth-configuration
+data:
+  VK_CLIENT_ID: "54767718"

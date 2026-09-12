@@ -1,0 +1,19 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: stalwart-public-smtp
+  namespace: mail-system
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: stalwart
+      app.kubernetes.io/instance: mail-hub
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - protocol: TCP
+          port: 25

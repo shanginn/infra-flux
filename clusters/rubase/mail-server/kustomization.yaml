@@ -6,9 +6,12 @@ resources:
   - ../../../components/mail-server/base
   - ../../../mail
   - admin-allowlist.enc.yaml
+  - service-public-smtp.yaml
+  - networkpolicy-public-smtp.yaml
 
 # Recovery bootstrap completed. The component and its encrypted credential
 # must remain absent during normal operation.
 
-# The public L4/user component is intentionally absent. See:
-# ../../../components/mail-server/cutover/kustomization.yaml
+# The full public L4/user component is intentionally absent. Only inbound
+# SMTP/25 is published above; submission, IMAPS and the user UI stay private.
+# See: ../../../components/mail-server/cutover/kustomization.yaml

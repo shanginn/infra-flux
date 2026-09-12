@@ -305,6 +305,7 @@ if BOOTSTRAP
           sysMtaStageAuthGet sysMtaStageAuthUpdate
           sysMtaStageMailGet sysMtaStageMailUpdate
           sysMtaStageRcptGet sysMtaStageRcptUpdate
+          sysMtaOutboundStrategyGet sysMtaOutboundStrategyUpdate
           sysSenderAuthGet sysSenderAuthUpdate
         ]),
         "disabledPermissions" => set(%w[
@@ -611,6 +612,19 @@ operations << {
     "maxFailures" => { "else" => "5" },
     "maxRecipients" => { "else" => max_recipients_per_message.to_s },
     "waitOnFail" => { "else" => "5s" }
+  }
+}
+operations << {
+  "@type" => "update",
+  "object" => "MtaOutboundStrategy",
+  "value" => {
+    "route" => {
+      "match" => list([{
+        "if" => "is_local_domain(rcpt_domain)",
+        "then" => "'local'"
+      }]),
+      "else" => "'mx'"
+    }
   }
 }
 operations << {

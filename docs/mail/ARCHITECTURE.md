@@ -81,6 +81,8 @@ of truth.
 
 - anonymous relay is denied; relaying requires an authenticated session;
 - domain `allowRelaying` and catch-all are false unless explicitly declared;
+- recipients in a locally managed domain use the local delivery route;
+  all other recipients use direct MX delivery;
 - plaintext IMAP/POP3 listeners are absent;
 - the public component contains only 25, 465, 587 and 993;
 - admin ingress and the permanent admin credential are IP-restricted;

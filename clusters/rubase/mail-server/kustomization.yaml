@@ -4,12 +4,13 @@ namespace: mail-system
 
 resources:
   - ../../../components/mail-server/base
-  # Temporary one-shot privileged reconcile. Remove after the Job succeeds.
-  - bootstrap-admin-job.yaml
   - ../../../mail
   - admin-allowlist.enc.yaml
   - service-public-smtp.yaml
   - networkpolicy-public-smtp.yaml
+
+# Privileged bootstrap completed. Temporary Jobs and credentials must remain
+# absent during normal operation.
 
 # The full public L4/user component is intentionally absent. Only inbound
 # SMTP/25 is published above; submission, IMAPS and the user UI stay private.

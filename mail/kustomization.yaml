@@ -10,6 +10,7 @@ resources:
 configMapGenerator:
   - name: mail-domain-catalog
     files:
+      - raspechat.rf.yaml=domains/raspechat.rf.yaml
       - vibesites.ru.yaml=domains/vibesites.ru.yaml
 
 generatorOptions:

@@ -43,10 +43,23 @@ spec:
           description: RFC-required abuse address
         - localPart: dmarc
           description: DMARC aggregate reports
+        - localPart: support
+          domain: xn--80aao3bdhk2b9b.xn--p1ai
+          description: Raspechat customer support
+        - localPart: postmaster
+          domain: xn--80aao3bdhk2b9b.xn--p1ai
+          description: Raspechat RFC postmaster
+        - localPart: abuse
+          domain: xn--80aao3bdhk2b9b.xn--p1ai
+          description: Raspechat RFC abuse contact
+        - localPart: dmarc
+          domain: xn--80aao3bdhk2b9b.xn--p1ai
+          description: Raspechat DMARC aggregate reports
       senderIdentities:
         - hello@vibesites.ru
         - support@vibesites.ru
         - postmaster@vibesites.ru
         - abuse@vibesites.ru
+        - support@xn--80aao3bdhk2b9b.xn--p1ai
       backup:
         enabled: true

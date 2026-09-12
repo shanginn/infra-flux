@@ -1,0 +1,29 @@
+apiVersion: mail.shanginn.io/v1alpha1
+kind: MailDomain
+metadata:
+  name: xn--80aao3bdhk2b9b.xn--p1ai
+spec:
+  description: Raspechat support aliases on the shared Rubase mail hub
+  lifecycle:
+    state: active
+    prune:
+      approved: false
+  domainAliases: []
+  catchAll:
+    enabled: false
+  subAddressing: true
+  reportAddress: dmarc@xn--80aao3bdhk2b9b.xn--p1ai
+  routing:
+    inbound: local
+    outbound: direct
+  policies:
+    bulkAllowed: false
+    anonymousRelayAllowed: false
+    maxRecipientsPerMessage: 50
+  quotas:
+    defaultMailboxBytes: 5368709120
+  dkim:
+    selector: raspechat2026
+    privateKeyFile: /run/dkim/raspechat.rf.pem
+  groups: []
+  accounts: []

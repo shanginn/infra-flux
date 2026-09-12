@@ -1,6 +1,6 @@
 $TTL 300
 @ IN SOA ns1.shanginn.io. hostmaster.shanginn.io. (
-  2026091101 ; serial
+  2026091201 ; serial
   1H ; refresh
   15M ; retry
   1W ; expire
@@ -9,3 +9,14 @@ $TTL 300
 @ IN NS ns2.shanginn.io.
 @ IN A 185.221.212.224
 www IN A 185.221.212.224
+
+@ 300 IN TXT "v=spf1 ip4:185.221.212.224 -all"
+raspechat2026._domainkey 300 IN TXT (
+  "v=DKIM1; k=rsa; p=MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA4fnIBLd9rLIXV80/TRKIS0m1cxRmQEKuMr0Mm++TExbT2mxgrXGME4ekCG+YRXOyNwYjZJsW1NqZCz5Qmj3PEwcZpSSGVPlKwyoVcUvr/N0PplUkEgZ6LL7I4bLL1AQy+ZAq//bITZrDCAmzbV9YEY6b"
+  "hj1rJtRYDtlSCPRpVeujFUDyY9jN3Iil+vYr2Fw3c3odLt+R4/cwvf0F7I7vpiEWDIT43K8RWVk4N5umxdD0JkXJHWB5QIC+pBWzoA/ZsnIYEnZsTH7Wii6aoOBGuzF0g5S8uTReAJWzmNGGpCeqw3ZaUm+QiFcX5cXIN/+NUTYipsSrZlV9mGnLEe5GvwIDAQAB"
+)
+_dmarc 300 IN TXT "v=DMARC1; p=none; rua=mailto:dmarc@xn--80aao3bdhk2b9b.xn--p1ai; adkim=s; aspf=s; fo=1; pct=100"
+
+; The production MX stays held until the provider PTR is exactly
+; mx1.shanginn.io and the existing public-mail cutover gate passes.
+; @ 300 IN MX 10 mx1.shanginn.io.

@@ -5,7 +5,7 @@ repo_root="$(CDPATH= cd -- "$(dirname "$0")/../.." && pwd)"
 tmpdir="$(mktemp -d)"
 trap 'rm -rf "$tmpdir"' EXIT
 mkdir -p "$tmpdir/catalog" "$tmpdir/credentials" "$tmpdir/work"
-cp "$repo_root/mail/domains/vibesites.ru.yaml" "$tmpdir/catalog/"
+cp "$repo_root"/mail/domains/*.yaml "$tmpdir/catalog/"
 
 for key in admin-password admin-allowed-ips gitops-password vibesites-hello-password; do
   printf 'test-only-%s' "$key" > "$tmpdir/credentials/$key"
@@ -21,8 +21,11 @@ ruby "$repo_root/components/mail-server/base/scripts/render-plan.rb"
 
 test "$(grep -c '\"@type\":\"destroy\"' "$tmpdir/work/plan.ndjson" || true)" -eq 0
 grep -q '"name":"vibesites.ru"' "$tmpdir/work/plan.ndjson"
+grep -q '"name":"xn--80aao3bdhk2b9b.xn--p1ai"' "$tmpdir/work/plan.ndjson"
 grep -q '"name":"postmaster"' "$tmpdir/work/plan.ndjson"
 grep -q '"name":"abuse"' "$tmpdir/work/plan.ndjson"
+grep -q 'Raspechat customer support' "$tmpdir/work/plan.ndjson"
+grep -q '"selector":"raspechat2026"' "$tmpdir/work/plan.ndjson"
 grep -q 'hello@vibesites.ru' "$tmpdir/work/backup-targets.tsv"
 grep -q '"object":"MtaStageAuth"' "$tmpdir/work/plan.ndjson"
 grep -q '"mustMatchSender":{"else":"true"}' "$tmpdir/work/plan.ndjson"

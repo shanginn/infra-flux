@@ -62,7 +62,7 @@ spec:
         - name: FENCING_MODE
           value: manual-verified-off
         - name: FAILOVER_PRIORITY
-          value: '100'
+          value: '50'
         ports:
         - name: postgresql
           containerPort: 5432
@@ -219,7 +219,7 @@ spec:
         - name: FENCING_MODE
           value: manual-verified-off
         - name: FAILOVER_PRIORITY
-          value: '50'
+          value: '10'
         ports:
         - name: postgresql
           containerPort: 5432
@@ -376,7 +376,7 @@ spec:
         - name: FENCING_MODE
           value: manual-verified-off
         - name: FAILOVER_PRIORITY
-          value: '10'
+          value: '100'
         ports:
         - name: postgresql
           containerPort: 5432

@@ -20,7 +20,7 @@
           - postgres_image_smoke_verified | default(false) | bool
           - postgres_image is match('^ghcr.io/shanginn/infra-flux-patroni@sha256:[0-9a-f]{64}$')
           - postgres_fencing_mode in ['watchdog', 'manual-verified-off']
-          - postgres_stage in ['bootstrap-msk', 'full']
+          - postgres_stage in ['bootstrap-home', 'full']
           - postgres_storage_other_reserve_gib | int >= 20
           - postgres_host_reset_approved | default(false) | bool if postgres_fencing_mode == 'watchdog' else postgres_manual_fencing_policy_approved | default(false) | bool
           - postgres_stage != 'full' or postgres_bootstrap_primary_verified | default(false) | bool
@@ -49,7 +49,7 @@
               return json.loads(r.stdout) if r.stdout.strip() else None
             current=get(['get','kustomization.kustomize.toolkit.fluxcd.io','unified-postgres','-n','flux-system','--ignore-not-found','-o','json'])
             if current is None:
-              assert sys.argv[1]=='bootstrap-msk', 'An absent controller requires a new empty bootstrap or an explicit recovery procedure'
+              assert sys.argv[1]=='bootstrap-home', 'An absent controller requires a new empty bootstrap or an explicit recovery procedure'
               assert not any(pathlib.Path('/var/lib/infra-postgres/unified').iterdir()), 'Refuse to bootstrap over previous PostgreSQL data'
               for resource in ('pods','endpoints'):
                 assert not get(['get',resource,'-n','database','-l','cluster-name=unified-postgres','-o','json'])['items'], 'Existing PostgreSQL DCS/workloads require recovery, not bootstrap'

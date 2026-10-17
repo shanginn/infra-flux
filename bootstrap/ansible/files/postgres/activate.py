@@ -21,7 +21,7 @@ def kube(args, body=None):
 
 assert settings['enabled'] is True and settings['image_smoke_verified'] is True
 assert settings['mode'] in ('watchdog', 'manual-verified-off')
-assert settings['stage'] in ('bootstrap-msk', 'full')
+assert settings['stage'] in ('bootstrap-home', 'full')
 assert re.fullmatch(r'ghcr\.io/shanginn/infra-flux-patroni@sha256:[0-9a-f]{64}', settings['image'])
 assert kube(['get', 'namespace', 'kube-system', '-o', 'json'])['metadata']['uid'] == settings['cluster_uid']
 source = kube(['get', 'gitrepository', 'infra-flux', '-n', 'flux-system', '-o', 'json'])
@@ -48,9 +48,19 @@ for name in ('patroni-credentials', 'patroni-server-tls'):
                else {k: bundle['pki'][k] for k in ('tls.crt', 'tls.key', 'ca.crt')})
     assert secret['data'] == desired, 'Runtime Secret does not match the saved identity'
 
+current = kube(['get', 'kustomization.kustomize.toolkit.fluxcd.io', 'unified-postgres', '-n', 'flux-system', '--ignore-not-found', '-o', 'json'])
 if settings['stage'] == 'full':
     assert settings['bootstrap_primary_verified'] is True
-    checked = kube(['exec', '-n', 'database', 'unified-pg-msk-0', '-c', 'postgres', '--', '/opt/patroni/bin/python', '/opt/infra/verify-runtime.py'])
+    assert current is not None, 'A full cluster requires an existing verified bootstrap'
+    candidates = kube(['get', 'pods', '-n', 'database', '-l', 'cluster-name=unified-postgres,role=primary', '-o', 'json'])['items']
+    assert len(candidates) == 1, 'Expected exactly one current primary'
+    primary = candidates[0]
+    assert primary['metadata']['name'] in ('unified-pg-home-0', 'unified-pg-msk-0', 'unified-pg-fin-0')
+    assert any(c['type'] == 'Ready' and c['status'] == 'True' for c in primary['status']['conditions'])
+    if current['metadata'].get('annotations', {}).get('infra.shanginn.io/stage') != 'full':
+        assert current['metadata']['annotations']['infra.shanginn.io/stage'] == 'bootstrap-home'
+        assert primary['metadata']['name'] == 'unified-pg-home-0', 'Verify the initial home primary before adding replicas'
+    checked = kube(['exec', '-n', 'database', primary['metadata']['name'], '-c', 'postgres', '--', '/opt/patroni/bin/python', '/opt/infra/verify-runtime.py'])
     assert checked['role'] == 'primary' and checked['dynamic_config_matches'] is True
     if settings['mode'] == 'watchdog':
         assert checked['watchdog_timeout_seconds'] == 30 and checked['watchdog_holder_pids']
@@ -61,20 +71,19 @@ current_vars = kube(['get', 'configmap', 'unified-postgres-settings', '-n', 'flu
 if current_vars:
     assert current_vars['metadata'].get('annotations', {}).get('infra.shanginn.io/managed-by') == OWNER
     assert current_vars['data'] == desired_vars, 'Image/network changes require a separate reviewed update'
-current = kube(['get', 'kustomization.kustomize.toolkit.fluxcd.io', 'unified-postgres', '-n', 'flux-system', '--ignore-not-found', '-o', 'json'])
 annotations = {'infra.shanginn.io/managed-by': OWNER, 'infra.shanginn.io/fencing-mode': settings['mode'], 'infra.shanginn.io/stage': settings['stage']}
 if current:
     old = current['metadata'].get('annotations', {})
     assert old.get('infra.shanginn.io/managed-by') == OWNER
     assert old.get('infra.shanginn.io/fencing-mode') == settings['mode'], 'Do not change fencing of a running cluster'
-    assert not (old.get('infra.shanginn.io/stage') == 'full' and settings['stage'] == 'bootstrap-msk'), 'Refuse implicit scale-down'
+    assert settings['stage'] == 'full' or old.get('infra.shanginn.io/stage') == settings['stage'], 'Refuse implicit scale-down or a different initial bootstrap'
     assert not current['spec'].get('suspend', False), 'Do not resume a deliberately suspended controller implicitly'
-elif settings['stage'] == 'bootstrap-msk':
+elif settings['stage'] == 'bootstrap-home':
     assert not kube(['get', 'pods', '-n', 'database', '-l', 'cluster-name=unified-postgres', '-o', 'json'])['items']
 
 variables = {'apiVersion': 'v1', 'kind': 'ConfigMap', 'metadata': {'name': 'unified-postgres-settings', 'namespace': 'flux-system', 'annotations': {'infra.shanginn.io/managed-by': OWNER}}, 'data': desired_vars}
 patches = [{'target': {'group': 'apps', 'version': 'v1', 'kind': 'StatefulSet', 'name': 'unified-pg-' + site},
-            'patch': '- op: replace\n  path: /spec/replicas\n  value: ' + str(int(site == 'msk' or settings['stage'] == 'full')) + '\n'} for site in ('msk', 'fin', 'home')]
+            'patch': '- op: replace\n  path: /spec/replicas\n  value: ' + str(int(site == 'home' or settings['stage'] == 'full')) + '\n'} for site in ('msk', 'fin', 'home')]
 controller = {'apiVersion': 'kustomize.toolkit.fluxcd.io/v1', 'kind': 'Kustomization', 'metadata': {'name': 'unified-postgres', 'namespace': 'flux-system', 'annotations': annotations},
               'spec': {'interval': '5m', 'retryInterval': '1m', 'timeout': '10m', 'prune': False, 'wait': True,
                        'path': './clusters/unified/postgres' + ('/watchdog' if settings['mode'] == 'watchdog' else ''),

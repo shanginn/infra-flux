@@ -1,0 +1,27 @@
+---
+- name: Reload preferred home priorities in an existing healthy PostgreSQL cluster
+  hosts: msk
+  become: true
+  gather_facts: false
+  vars:
+    postgres_priority_reload_enabled: false
+  tasks:
+    - name: Leave running Patroni configuration unchanged unless explicitly selected
+      ansible.builtin.meta: end_play
+      when: not postgres_priority_reload_enabled | bool
+
+    - name: Require the exact cluster identity and a real guarded execution
+      ansible.builtin.assert:
+        that:
+          - not ansible_check_mode
+          - postgres_cluster_uid is defined
+
+    - name: Check all three members before reloading only their local priority tags
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/python3
+          - -c
+          - "{{ lookup('ansible.builtin.file', 'files/postgres/priority.py') }}"
+        stdin: "{{ {'enabled': true, 'cluster_uid': postgres_cluster_uid} | to_json }}"
+      register: postgres_priority_result
+      changed_when: (postgres_priority_result.stdout | from_json).changed

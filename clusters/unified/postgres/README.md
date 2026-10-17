@@ -12,9 +12,9 @@
 `/etc/infra-postgres/runtime.json` содержит секреты; хранить его только на
 серверах и в зашифрованной резервной копии, никогда в Git.
 
-Первый этап активации — `bootstrap-msk`: один новый пустой primary в Москве.
+Первый этап активации — `bootstrap-home`: один новый пустой primary дома.
 После успешного `/opt/infra/verify-runtime.py` внутри его контейнера этап `full`
-добавляет Финляндию и дом. Проверить одну primary и две streaming async-реплики,
+добавляет Москву и Финляндию. Проверить одну primary и две streaming async-реплики,
 одинаковый system identifier, TLS и восстановление резервной копии до переноса
 приложений. Отсутствующий контроллер с непустыми данными требует отдельного
 восстановления; обычный bootstrap откажется их принимать.
@@ -66,6 +66,22 @@ SSH, удаление Pod или drain этого не доказывают. Т�
 Плановый switchover выполнять через Patroni после проверки репликации; прямой
 `pg_ctl promote` обходит fencing и не используется. При сомнении о состоянии
 старого primary сохранить отказ записи до подтверждённого fencing.
+
+Предпочтительный primary — дом. `failover_priority`: home 100, msk 50, fin 10.
+При равном полученном WAL выбирается больший приоритет; более актуальная
+реплика имеет преимущество независимо от приоритета. Это не автоматический
+failback: восстановившийся дом сначала возвращается репликой. После проверки
+трёх Ready-экземпляров, TLS, streaming и достижения домашней репликой снятого
+с текущего primary WAL LSN оператор выполняет Patroni switchover с явным
+кандидатом `unified-pg-home-0`, затем проверяет одну primary и две async-реплики.
+Действующий кластер остаётся на этапе `full`; `bootstrap-home` предназначен
+только для пустой установки, не для переноса роли или восстановления.
+
+StatefulSet использует `OnDelete`: обновление приоритетов в Git не перезапускает
+работающие Pod. После reconciliation `postgres-priority.yml` с явным включением
+применяет только `tags.failover_priority` в локальной конфигурации через Patroni
+reload и проверяет неизменность роли и времени запуска PostgreSQL. Новый Pod
+получает приоритет из декларативного environment. Playbook не переключает primary.
 
 Репликация асинхронная: COMMIT не ждёт удалённые реплики. Последние
 подтверждённые транзакции могут потеряться. Порог кандидата 16MiB сравнивается
@@ -124,7 +140,9 @@ credentials. Логический SQL загружать только в нов�
 совмещать с `-X stream`. Непрерывный PITR требует отдельного WAL-архива, который
 работает и при выключенном Mac; он этим набором файлов не настроен.
 
-Источники: [Patroni watchdog](https://patroni.readthedocs.io/en/latest/watchdog.html),
+Источники: [Patroni tags](https://patroni.readthedocs.io/en/latest/yaml_configuration.html#tags),
+[switchover](https://patroni.readthedocs.io/en/latest/rest_api.html#switchover),
+[Patroni watchdog](https://patroni.readthedocs.io/en/latest/watchdog.html),
 [async replication](https://patroni.readthedocs.io/en/latest/replication_modes.html),
 [pg_dumpall](https://www.postgresql.org/docs/18/app-pg-dumpall.html),
 [pg_basebackup](https://www.postgresql.org/docs/18/app-pgbasebackup.html).

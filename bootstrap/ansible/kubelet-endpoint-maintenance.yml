@@ -1,0 +1,91 @@
+---
+# Explicit maintenance, separate from the immutable bootstrap fingerprint.
+- name: Inspect kubelet credentials and all three control planes without changing files
+  hosts: control_plane
+  become: true
+  gather_facts: false
+  any_errors_fatal: true
+  vars: &kubelet_endpoint_defaults
+    kubelet_endpoint_apply: false
+    kubelet_endpoint_expected_config_sha256: {}
+    kubelet_endpoint_expected_identity: {}
+  tasks:
+    - name: Require the complete control plane and explicit apply outside check mode
+      ansible.builtin.assert:
+        that:
+          - ansible_play_hosts_all | sort == ['fin', 'home', 'msk']
+          - groups['control_plane'] | sort == ansible_play_hosts_all | sort
+          - not kubelet_endpoint_apply | bool or not ansible_check_mode
+
+    - name: Inspect the exact kubeconfig preimage, authenticated proxy and cluster health
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/python3
+          - -c
+          - "{{ lookup('ansible.builtin.file', playbook_dir ~ '/files/kubelet-endpoint-maintenance.py', rstrip=False) }}"
+          - inspect
+          - --node
+          - "{{ inventory_hostname }}"
+          - --shared-source
+          - "{{ lookup('ansible.builtin.file', playbook_dir ~ '/files/etcd-probe-maintenance.py', rstrip=False) }}"
+      check_mode: false
+      changed_when: false
+      register: kubelet_endpoint_inspection
+
+    - name: Retain reviewed identity for serial maintenance
+      ansible.builtin.set_fact:
+        kubelet_endpoint_identity: "{{ kubelet_endpoint_inspection.stdout | from_json }}"
+
+    - name: Require one common cluster CA
+      ansible.builtin.assert:
+        that:
+          - groups['control_plane'] | map('extract', hostvars, 'kubelet_endpoint_identity') | map(attribute='ca_sha256') | unique | list | length == 1
+
+    - name: Show the proposed endpoint and exact preimage hashes
+      ansible.builtin.debug:
+        var: kubelet_endpoint_identity
+
+- name: Adopt the existing local API proxy one healthy node at a time
+  hosts: control_plane
+  order: sorted
+  serial: 1
+  become: true
+  gather_facts: false
+  any_errors_fatal: true
+  vars: *kubelet_endpoint_defaults
+  tasks:
+    - name: Default to inspection only
+      ansible.builtin.meta: end_host
+      when: not kubelet_endpoint_apply | bool
+
+    - name: Require explicitly reviewed kubeconfig hashes for all three nodes
+      ansible.builtin.assert:
+        that:
+          - not ansible_check_mode
+          - kubelet_endpoint_expected_config_sha256.keys() | list | sort == ['fin', 'home', 'msk']
+          - kubelet_endpoint_expected_config_sha256[inventory_hostname] is match('^[0-9a-f]{64}$')
+          - kubelet_endpoint_expected_identity.keys() | list | sort == ['fin', 'home', 'msk']
+
+    - name: Change only server, dispatch one bounded restart and verify lease renewal
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/python3
+          - -c
+          - "{{ lookup('ansible.builtin.file', playbook_dir ~ '/files/kubelet-endpoint-maintenance.py', rstrip=False) }}"
+          - apply
+          - --node
+          - "{{ inventory_hostname }}"
+          - --ca-sha256
+          - "{{ kubelet_endpoint_identity.ca_sha256 }}"
+          - --expected-sha256
+          - "{{ kubelet_endpoint_expected_config_sha256[inventory_hostname] }}"
+          - --review-json
+          - "{{ kubelet_endpoint_expected_identity[inventory_hostname] | to_json }}"
+          - --shared-source
+          - "{{ lookup('ansible.builtin.file', playbook_dir ~ '/files/etcd-probe-maintenance.py', rstrip=False) }}"
+      register: kubelet_endpoint_result
+      changed_when: (kubelet_endpoint_result.stdout | from_json).changed
+
+    - name: Show stable recovery proof
+      ansible.builtin.debug:
+        msg: "{{ kubelet_endpoint_result.stdout | from_json }}"

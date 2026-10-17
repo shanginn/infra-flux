@@ -63,13 +63,35 @@ Only `infra-headscale.service` and `infra-derper.service` may be stopped, and
 only when already running and enabled. It never stops the namespace service.
 
 For a one-node private-network partition, use `--kind vpn-partition` without
-`--unit`. Both IPv4 and IPv6 receive uniquely tagged DROP rules exclusively on
-`tailscale0` INPUT/OUTPUT/FORWARD. The preflight checks the actual route back to
-the SSH client and refuses a session using `tailscale0`. No rule is flushed;
-rollback deletes only the exact rules with this invocation's random token.
+`--unit`. Install `nft` first. One uniquely named `inet` table covers IPv4 and
+IPv6, with input/output/forward base chains at priority −450 and four
+`tailscale0` counter/drop rules. The batch is atomic and refuses an existing
+table. These base chains are independent of the chains that Calico and
+Tailscale reconcile. An accept in another base chain cannot override their
+drop verdict ([nftables verdict semantics](https://netfilter.org/projects/nftables/manpage.html)).
+The preflight rejects existing flowtables, which could bypass the forward
+hook, and checks that the return route to the SSH client avoids `tailscale0`.
+No ruleset is flushed. Rollback checks the table's token comment and recorded
+handle, then deletes only that table by handle. A damaged rule does not prevent
+removal of the owned table. The old exact-rule rollback remains available for
+state armed by an earlier helper; new partitions always use the separate table.
 The existing public/old-WireGuard SSH path and Tailscale's outer transport are
 not targeted. A software-watchdog reset during a primary partition is an
 expected possible result, and must be recorded.
+
+During the entire partition, poll `status --token "$TOKEN"` over the original
+SSH path every two seconds and save the JSON privately. Its
+`partition_observation` checks effective hooks, priorities, rule order and
+verdicts, and reports packet/byte counters for all four rules. Require
+`present=true` and `valid=true` throughout the intended interval, unchanged
+boot ID and increasing counters under the independent probes. In parallel,
+probe the isolated node's VPN API from a surviving node and the surviving VPN
+APIs from the isolated node, with bounded timeouts. API writes through each
+surviving node's local proxy, PostgreSQL transactions and S3 probes measure the
+cluster's useful availability separately. Missing samples are gaps, not proof
+of continued isolation. Unexpected connectivity, missing/changed rules or an
+early reboot invalidates the claimed duration; restore and record the actual
+observed interval. `status` never repairs or reapplies a disappearing rule.
 
 For a single approved reboot, use `--kind reboot --confirm-reboot --seconds 300`.
 The helper requires SSH, tailscaled, the local API proxy and kubelet enabled at

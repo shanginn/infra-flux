@@ -11,6 +11,7 @@ import ipaddress
 import json
 import os
 from pathlib import Path
+import re
 import time
 import uuid
 from common import ANNOTATION, NAMESPACE, OWNER, command, ensure_namespace, get, identity, kube, owned, require
@@ -19,6 +20,9 @@ ROOT = Path('/var/lib/infra-flux-fault-tests')
 SCRIPT = Path('/etc/infra-flux/ha-tests/node-fault.py')
 GLOBAL = 'active-fault'
 UNITS = ('infra-headscale.service', 'infra-derper.service')
+NFT = '/usr/sbin/nft'
+NFT_PREFIX = 'infra_fault_'
+NFT_PRIORITY = -450
 
 
 def atomic(path, value):
@@ -95,17 +99,118 @@ def rules(token):
             ('FORWARD', ['-i', 'tailscale0']), ('FORWARD', ['-o', 'tailscale0'])], ['-m', 'comment', '--comment', comment, '-j', 'DROP']
 
 
-def partition(state, remove=False):
+def legacy_partition_remove(state):
+    # Permit safe rollback of state armed by the older reviewed helper only.
     chains, suffix = rules(state['token'])
     for binary in state['firewalls']:
         for chain, interface in chains:
             exact = [chain, *interface, *suffix]
             result = command([binary, '-w', '5', '-C', *exact], check=False)
             require(result.returncode in (0, 1), 'Cannot inspect firewall rule')
-            if remove and result.returncode == 0:
+            if result.returncode == 0:
                 command([binary, '-w', '5', '-D', *exact])
-            elif not remove and result.returncode == 1:
-                command([binary, '-w', '5', '-I', chain, '1', *interface, *suffix])
+
+
+def nft_name(state):
+    require(re.fullmatch('[0-9a-f]{32}', state['token']), 'Invalid firewall ownership token')
+    return NFT_PREFIX + state['token']
+
+
+def nft_batch(state):
+    table, comment = nft_name(state), 'infra-fault:' + state['token']
+    lines = [f'create table inet {table} {{ comment "{comment}"; }}']
+    for hook in ('input', 'output', 'forward'):
+        lines.append(f'add chain inet {table} {hook} {{ type filter hook {hook} priority {NFT_PRIORITY}; policy accept; }}')
+        for direction in (('iifname', 'oifname') if hook == 'forward' else ('iifname',) if hook == 'input' else ('oifname',)):
+            lines.append(f'add rule inet {table} {hook} {direction} "tailscale0" counter drop comment "{comment}"')
+    return ('\n'.join(lines) + '\n').encode()
+
+
+def nft_read(state):
+    table = nft_name(state)
+    tables = json.loads(command([NFT, '-j', 'list', 'tables'], timeout=5).stdout)['nftables']
+    if not any(x.get('table', {}).get('name') == table and x['table'].get('family') == 'inet' for x in tables):
+        return None
+    objects = json.loads(command([NFT, '-j', 'list', 'table', 'inet', table], timeout=5).stdout)['nftables']
+    headers = [x['table'] for x in objects if 'table' in x]
+    require(len(headers) == 1, 'Unexpected fault-table identity')
+    header = headers[0]
+    require(header.get('name') == table and header.get('family') == 'inet' and
+            header.get('comment') == 'infra-fault:' + state['token'], 'Refusing an unrelated nft table')
+    handle = header.get('handle')
+    require(type(handle) is int and handle > 0, 'Missing nft table handle')
+    require(state.get('partition_table_handle', handle) == handle, 'Fault table was replaced')
+    return objects
+
+
+def nft_shape(state, objects):
+    """Validate effective hooks and verdicts, not merely table existence."""
+    if objects is None:
+        return {'present': False, 'valid': False, 'counters': []}
+    table, comment = nft_name(state), 'infra-fault:' + state['token']
+    headers = [x['table'] for x in objects if 'table' in x]
+    require(len(headers) == 1 and not headers[0].get('flags'), 'Fault table has unexpected flags')
+    require(all(set(x) in ({'metainfo'}, {'table'}, {'chain'}, {'rule'}) for x in objects), 'Unexpected object in fault table')
+    chains = [x['chain'] for x in objects if 'chain' in x]
+    expected = [{'family': 'inet', 'table': table, 'name': hook, 'type': 'filter',
+                 'hook': hook, 'prio': NFT_PRIORITY, 'policy': 'accept'} for hook in ('input', 'output', 'forward')]
+    actual = [{k: v for k, v in c.items() if k != 'handle'} for c in chains]
+    require(sorted(actual, key=lambda c: c.get('name', '')) == sorted(expected, key=lambda c: c['name']), 'Fault chain hooks or priorities changed')
+    counters = []
+    for hook in ('input', 'output', 'forward'):
+        entries = [x['rule'] for x in objects if 'rule' in x and x['rule'].get('chain') == hook]
+        directions = ('iifname', 'oifname') if hook == 'forward' else ('iifname',) if hook == 'input' else ('oifname',)
+        require(len(entries) == len(directions), 'Fault rule count changed')
+        for entry, direction in zip(entries, directions):
+            require(entry.get('family') == 'inet' and entry.get('table') == table and entry.get('comment') == comment, 'Fault rule ownership changed')
+            expr = entry.get('expr', [])
+            require(len(expr) == 3 and expr[0] == {'match': {'op': '==', 'left': {'meta': {'key': direction}}, 'right': 'tailscale0'}} and
+                    set(expr[1]) == {'counter'} and expr[2] == {'drop': None}, 'Fault rule no longer exclusively drops tailscale0')
+            counter = expr[1]['counter']
+            require(set(counter) == {'packets', 'bytes'} and all(type(v) is int and v >= 0 for v in counter.values()), 'Invalid fault counters')
+            counters.append({'hook': hook, 'direction': direction, **counter})
+    require(sum('rule' in x for x in objects) == 4, 'Unexpected additional rule')
+    return {'present': True, 'valid': True, 'table': table, 'handle': headers[0]['handle'], 'counters': counters}
+
+
+def nft_preflight(state):
+    command([NFT, '--version'], timeout=5)
+    objects = json.loads(command([NFT, '-j', 'list', 'ruleset'], timeout=10).stdout)['nftables']
+    require(not any('flowtable' in x for x in objects), 'Flowtables can bypass the forward hook; refuse this partition test')
+    require(not any(x.get('table', {}).get('name', '').startswith(NFT_PREFIX) for x in objects), 'An existing fault table needs explicit recovery first')
+    command([NFT, '--check', '--file', '-'], input=nft_batch(state), timeout=5)
+
+
+def partition(state, remove=False):
+    if state.get('partition_backend') != 'nft-inet-v1':
+        require(remove and 'firewalls' in state, 'Re-arm with the nft partition helper')
+        return legacy_partition_remove(state)
+    objects = nft_read(state)
+    if remove:
+        if objects is not None:
+            # A changed rule must not prevent restoration of our owned table.
+            # Its name, token comment and (once recorded) handle were checked.
+            try: state['partition_before_rollback'] = nft_shape(state, objects)
+            except RuntimeError as error: state['partition_before_rollback'] = {'valid': False, 'error': str(error)}
+            handle = next(x['table']['handle'] for x in objects if 'table' in x)
+            command([NFT, 'delete', 'table', 'inet', 'handle', str(handle)], timeout=5)
+            require(nft_read(state) is None, 'Fault table still exists after rollback')
+        return
+    require(objects is None, 'Fault table already exists; do not overwrite it')
+    # create fails on a collision; nft submits the whole batch atomically.
+    command([NFT, '--file', '-'], input=nft_batch(state), timeout=5)
+    proof = nft_shape(state, nft_read(state))
+    require(proof['valid'], 'Partition did not become effective')
+    state.update(partition_table_handle=proof['handle'], partition_initial=proof, partition_applied_unix=time.time())
+    atomic(ROOT / 'active.json', state)
+
+
+def status(state):
+    result = {**state, 'observed_unix': time.time(), 'current_boot_id': boot_id()}
+    if state.get('partition_backend') == 'nft-inet-v1':
+        try: result['partition_observation'] = nft_shape(state, nft_read(state))
+        except RuntimeError as error: result['partition_observation'] = {'valid': False, 'error': str(error)}
+    return result
 
 
 def rollback(state):
@@ -148,18 +253,17 @@ def arm(args):
         require(args.confirm_reboot, 'Reboot requires its explicit confirmation')
         for unit in ('ssh.service', 'tailscaled.service', 'infra-k8s-api-proxy.service', 'kubelet.service'):
             command(['/usr/bin/systemctl', 'is-enabled', '--quiet', unit])
-    firewalls = []
     if args.kind == 'vpn-partition':
         command(['/usr/sbin/ip', 'link', 'show', 'dev', 'tailscale0'])
-        for binary in ('/usr/sbin/iptables', '/usr/sbin/ip6tables'):
-            command([binary, '-w', '5', '-S', 'INPUT'])
-            firewalls.append(binary)
     proof = recovery_gate(args.ca_sha256)
     token = uuid.uuid4().hex
     state = {'owner': OWNER, 'token': token, 'node': node, 'kind': args.kind, 'unit': args.unit,
              'ca_sha256': args.ca_sha256, 'boot_id': boot_id(), 'ssh_device': route,
-             'firewalls': firewalls, 'phase': 'arming', 'armed_unix': time.time(),
+             'phase': 'arming', 'armed_unix': time.time(),
              'rollback_after_seconds': args.seconds, 'preflight': proof}
+    if args.kind == 'vpn-partition':
+        state['partition_backend'] = 'nft-inet-v1'
+        nft_preflight(state)
     acquire_global(state)
     atomic(ROOT / 'active.json', state)
     timer = 'infra-fault-rollback-' + token
@@ -245,7 +349,7 @@ def main():
         else:
             require(args.token, 'Explicit fault token required')
             state = read_state(args.token)
-            result = {'trigger': trigger, 'rollback': rollback, 'finish': finish, 'status': lambda s: s}[args.action](state)
+            result = {'trigger': trigger, 'rollback': rollback, 'finish': finish, 'status': status}[args.action](state)
         print(json.dumps(result, sort_keys=True))
 
 

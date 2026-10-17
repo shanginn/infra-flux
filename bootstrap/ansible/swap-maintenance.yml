@@ -1,0 +1,85 @@
+---
+# Separate from immutable kubeadm bootstrap; no partition or bootloader changes.
+- name: Keep the reviewed home GPT swap partition disabled on boot
+  hosts: home
+  become: true
+  gather_facts: false
+  any_errors_fatal: true
+  vars:
+    unified_swap_maintenance_apply: false
+    unified_swap_device: ''
+    unified_swap_uuid: ''
+    unified_swap_partuuid: ''
+    unified_swap_expected_ca_sha256: ''
+    unified_swap_expected_fstab_sha256: ''
+  tasks:
+    - name: Require exact private partition identities
+      ansible.builtin.assert:
+        that:
+          - ansible_play_hosts_all == ['home']
+          - unified_swap_device is match('^/dev/[a-zA-Z0-9]+$')
+          - unified_swap_uuid is match('^[0-9a-f-]{36}$')
+          - unified_swap_partuuid is match('^[0-9a-f-]{36}$')
+          - not unified_swap_maintenance_apply | bool or not ansible_check_mode
+
+    - name: Inspect the partition, commented fstab entry and owned kubelet
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/python3
+          - -c
+          - "{{ lookup('ansible.builtin.file', playbook_dir ~ '/files/swap-maintenance.py') }}"
+          - inspect
+          - --node
+          - "{{ inventory_hostname }}"
+          - --device
+          - "{{ unified_swap_device }}"
+          - --uuid
+          - "{{ unified_swap_uuid }}"
+          - --partuuid
+          - "{{ unified_swap_partuuid }}"
+      check_mode: false
+      changed_when: false
+      register: swap_maintenance_inspection
+
+    - name: Show the exact preimage and candidate for review
+      ansible.builtin.debug:
+        msg: "{{ swap_maintenance_inspection.stdout | from_json }}"
+
+    - name: Keep inspection as the default action
+      ansible.builtin.meta: end_play
+      when: not unified_swap_maintenance_apply | bool
+
+    - name: Require the separately reviewed CA and fstab preimage
+      ansible.builtin.assert:
+        that:
+          - unified_swap_expected_ca_sha256 is match('^[0-9a-f]{64}$')
+          - unified_swap_expected_fstab_sha256 is match('^[0-9a-f]{64}$')
+          - (swap_maintenance_inspection.stdout | from_json).ca_sha256 == unified_swap_expected_ca_sha256
+          - (swap_maintenance_inspection.stdout | from_json).fstab_sha256 == unified_swap_expected_fstab_sha256
+          - (swap_maintenance_inspection.stdout | from_json).active_swap_count == 0
+
+    - name: Persist only noauto and reload generators without service restarts
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/python3
+          - -c
+          - "{{ lookup('ansible.builtin.file', playbook_dir ~ '/files/swap-maintenance.py') }}"
+          - apply
+          - --node
+          - "{{ inventory_hostname }}"
+          - --device
+          - "{{ unified_swap_device }}"
+          - --uuid
+          - "{{ unified_swap_uuid }}"
+          - --partuuid
+          - "{{ unified_swap_partuuid }}"
+          - --ca-sha256
+          - "{{ unified_swap_expected_ca_sha256 }}"
+          - --expected-fstab-sha256
+          - "{{ unified_swap_expected_fstab_sha256 }}"
+      register: swap_maintenance_result
+      changed_when: (swap_maintenance_result.stdout | from_json).changed
+
+    - name: Show generator and protected-configuration readback
+      ansible.builtin.debug:
+        msg: "{{ swap_maintenance_result.stdout | from_json }}"

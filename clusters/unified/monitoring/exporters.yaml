@@ -118,7 +118,7 @@ spec:
           image: registry.k8s.io/kube-state-metrics/kube-state-metrics:v2.20.0@sha256:42cfe3723a5f058171c627537fb57a3ea0f26e4380fa18555a95cb1a1b4cfc5b
           args:
             - --resources=nodes,pods,namespaces,persistentvolumes,persistentvolumeclaims,deployments,statefulsets,daemonsets,replicasets,jobs,cronjobs
-            - --metric-allowlist=kube_node_status_condition,kube_node_status_allocatable,kube_pod_status_phase,kube_pod_status_ready,kube_pod_container_status_restarts_total,kube_pod_container_status_waiting_reason,kube_pod_container_resource_requests,kube_deployment_spec_replicas,kube_deployment_status_replicas_available,kube_statefulset_replicas,kube_statefulset_status_replicas_ready,kube_daemonset_status_desired_number_scheduled,kube_daemonset_status_number_ready,kube_persistentvolumeclaim_status_phase,kube_job_status_failed,kube_cronjob_status_last_successful_time
+            - --metric-allowlist=kube_node_status_condition,kube_node_status_allocatable,kube_pod_status_phase,kube_pod_status_ready,kube_pod_container_status_restarts_total,kube_pod_container_status_waiting_reason,kube_pod_container_resource_requests,kube_pod_container_resource_limits,kube_deployment_spec_replicas,kube_deployment_status_replicas_available,kube_statefulset_replicas,kube_statefulset_status_replicas_ready,kube_daemonset_status_desired_number_scheduled,kube_daemonset_status_number_ready,kube_persistentvolumeclaim_status_phase,kube_job_status_failed,kube_cronjob_status_last_successful_time
           ports:
             - {name: metrics, containerPort: 8080}
             - {name: telemetry, containerPort: 8081}

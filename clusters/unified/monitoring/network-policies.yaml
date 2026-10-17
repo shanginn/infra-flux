@@ -21,6 +21,20 @@ spec:
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
+metadata: {name: prometheus-private-api-proxy}
+spec:
+  podSelector: {matchLabels: {app: prometheus}}
+  policyTypes: [Ingress]
+  ingress:
+    # API server service proxy may choose the Prometheus Pod on the other VPS.
+    # Host traffic to its local Pod is already allowed; remote host traffic is not.
+    - from:
+        - ipBlock: {cidr: '${VPN_CIDR}'}
+      ports:
+        - {port: 9090, protocol: TCP}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
 metadata: {name: monitoring-bounded-egress}
 spec:
   podSelector: {}

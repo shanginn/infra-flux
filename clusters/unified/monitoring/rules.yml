@@ -175,7 +175,7 @@ groups:
       - alert: NotificationDeliveryNotConfigured
         expr: vector(1)
         labels: {severity: info}
-        annotations: {summary: External notification destination is pending; alerts are visible only inside Alertmanager}
+        annotations: {summary: Alertmanager has no external receiver; local Mac polling requires an awake Mac and a logged-in user}
   - name: host-resources
     rules:
       - alert: NodeMemoryLow

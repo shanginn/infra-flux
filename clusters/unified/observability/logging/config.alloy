@@ -87,7 +87,7 @@ loki.process "sanitize" {
     replace = "[REDACTED-JWT]"
   }
   stage.replace {
-    expression = "(?i)https?://([^/@ :]+:[^/@ ]+@)"
+    expression = "(?i)(?:https?|postgres(?:ql)?)://([^/@ :]+:[^/@ ]+@)"
     replace = "[REDACTED]@"
   }
   stage.replace {

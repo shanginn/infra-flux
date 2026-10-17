@@ -18,13 +18,13 @@
     "list": [
       {
         "name": "datasource",
-        "label": "Prometheus replica",
+        "label": "Prometheus",
         "type": "datasource",
         "query": "prometheus",
-        "regex": "/^Prometheus replica [01]$/",
+        "regex": "/^Prometheus (HA|replica [01])$/",
         "current": {
-          "text": "Prometheus replica 0",
-          "value": "prometheus-0"
+          "text": "Prometheus HA",
+          "value": "prometheus-ha"
         }
       },
       {
@@ -71,7 +71,7 @@
       "title": "Reading this dashboard",
       "options": {
         "mode": "markdown",
-        "content": "Workload state and actual cAdvisor consumption. An evicted or rebooted observer leaves missing observations; its silence does not itself prove application downtime.\n\nData source selection is explicit. Each Prometheus keeps its own history; replica 1 does not fill gaps in replica 0. Missing series show **No data**, never an invented zero. Refresh is one minute."
+        "content": "Workload state and actual cAdvisor consumption. An evicted or rebooted observer leaves missing observations; its silence does not itself prove application downtime.\n\nPrometheus HA routes new connections to a Ready replica. An in-flight request may still fail during a loss; retry or refresh. Each replica keeps its own history, so this does not merge historical gaps. Choose a direct replica for consistent diagnostic history. Missing series show **No data**, never an invented zero. Refresh is one minute."
       },
       "gridPos": {
         "x": 0,

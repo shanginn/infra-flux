@@ -29,6 +29,8 @@ class Redaction(unittest.TestCase):
                 file.write_text(''.join(now+' stdout F '+x+'\n' for x in values))
             lines('demo','web', ['SAFE_HEALTHY_LINE', 'password=CANARY_PASSWORD','Authorization: Bearer CANARY_BEARER',
                                 'Cookie: session=CANARY_COOKIE','url=https://user:CANARY_URL_PASSWORD@invalid.example/path?key=CANARY_QUERY',
+                                'dsn=postgresql://user:CANARY_PG_PASSWORD@invalid.example/db',
+                                'dsn=postgres://user:CANARY_PG_SHORT_PASSWORD@invalid.example/db',
                                 'token=CANARY_TOKEN','eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJjYW5hcnkifQ.CANARY_SIGNATURE',
                                 '-----BEGIN PRIVATE KEY----- CANARY_PEM', 'CANARY_LONG_'+'x'*9000])
             lines('infra-ha-test','observer',['CANARY_TEST_NAMESPACE'])
@@ -58,6 +60,8 @@ class Redaction(unittest.TestCase):
             self.assertIn('[REDACTED]',output)
             self.assertIn('[REDACTED-JWT]',output)
             self.assertIn('[REDACTED-QUERY]',output)
+            self.assertIn('postgresql://[REDACTED]@invalid.example/db',output)
+            self.assertIn('postgres://[REDACTED]@invalid.example/db',output)
             self.assertNotIn('CANARY_',output,output[-3000:])
             self.assertIn('namespace="demo"',output.replace(chr(92),''))
             self.assertNotIn('filename=',output)

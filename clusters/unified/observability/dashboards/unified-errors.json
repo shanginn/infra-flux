@@ -19,13 +19,13 @@
     "list": [
       {
         "name": "datasource",
-        "label": "Prometheus replica",
+        "label": "Prometheus",
         "type": "datasource",
         "query": "prometheus",
-        "regex": "/^Prometheus replica [01]$/",
+        "regex": "/^Prometheus (HA|replica [01])$/",
         "current": {
-          "text": "Prometheus replica 0",
-          "value": "prometheus-0"
+          "text": "Prometheus HA",
+          "value": "prometheus-ha"
         }
       }
     ]
@@ -36,7 +36,7 @@
       "title": "Reading this dashboard",
       "options": {
         "mode": "markdown",
-        "content": "[Open GlitchTip](https://errors.apps.shanginn.io) for application exceptions. Applications must configure their SDK/DSN; a healthy service or an empty queue does not prove exception delivery. The capacity guard is a periodic ingestion gate, not a physical PostgreSQL quota. It stays latched after its threshold is crossed until explicit operator review. Shared database/queue gauges use max across replicas; per-worker counters are summed. Missing series show **No data**, not zero errors. Select one Prometheus history explicitly."
+        "content": "[Open GlitchTip](https://errors.apps.shanginn.io) for application exceptions. Applications must configure their SDK/DSN; a healthy service or an empty queue does not prove exception delivery. The capacity guard is a periodic ingestion gate, not a physical PostgreSQL quota. It stays latched after its threshold is crossed until explicit operator review. Shared database/queue gauges use max across replicas; per-worker counters are summed. Missing series show **No data**, not zero errors. The default Prometheus HA service selects a Ready replica; use the direct replica data sources for consistent diagnostic history."
       },
       "gridPos": {
         "x": 0,

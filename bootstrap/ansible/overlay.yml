@@ -410,6 +410,27 @@
         daemon_reload: true
       when: overlay_units.changed
 
+    - name: Inspect separately activated Kubernetes ingress routing
+      ansible.builtin.stat:
+        path: "{{ overlay_root }}/ingress-backends.json"
+      register: overlay_ingress_state
+
+    - name: Preserve explicitly activated ingress backends on an overlay rerun
+      when: overlay_ingress_state.stat.exists
+      block:
+        - ansible.builtin.slurp:
+            src: "{{ overlay_root }}/ingress-backends.json"
+          register: overlay_ingress_saved
+          no_log: true
+        - ansible.builtin.assert:
+            that:
+              - (overlay_ingress_saved.content | b64decode | from_json).owner == 'infra-flux/ansible/ingress-edge'
+              - (overlay_ingress_saved.content | b64decode | from_json).backends.keys() | list | sort == ['fin', 'msk']
+          no_log: true
+        - ansible.builtin.set_fact:
+            overlay_ingress_backends: "{{ (overlay_ingress_saved.content | b64decode | from_json).backends }}"
+          no_log: true
+
     - name: Install and validate the SNI and ACME router configuration
       ansible.builtin.template:
         src: overlay/haproxy.cfg.j2

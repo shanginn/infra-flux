@@ -1,0 +1,112 @@
+---
+- name: Discover the two existing ingress nodes over the private network
+  hosts: msk:fin
+  become: true
+  gather_facts: true
+  any_errors_fatal: true
+  vars_files: [vars/overlay.yml]
+  tasks:
+    - name: Require deliberate activation on both VPS nodes
+      ansible.builtin.assert:
+        that:
+          - ingress_edge_enabled | default(false) | bool
+          - not ansible_check_mode
+          - ansible_play_hosts_all | sort == ['fin', 'msk']
+
+    - name: Read managed overlay identity
+      ansible.builtin.slurp:
+        src: /etc/infra-flux/overlay.json
+      register: ingress_overlay_marker
+      no_log: true
+
+    - name: Require ownership and unchanged coordinator role
+      ansible.builtin.assert:
+        that:
+          - (ingress_overlay_marker.content | b64decode | from_json).owner == overlay_owner
+          - (ingress_overlay_marker.content | b64decode | from_json).coordinator == (inventory_hostname == headscale_active_host)
+      no_log: true
+
+    - name: Read the registered private node address
+      ansible.builtin.command: tailscale ip -4
+      register: ingress_vpn_address
+      changed_when: false
+
+    - name: Verify node identity and a Ready local Traefik instance
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/python3
+          - -c
+          - |
+            import ipaddress,json,subprocess,sys,urllib.request
+            name,ip=sys.argv[1:]
+            assert ipaddress.ip_address(ip) in ipaddress.ip_network('100.64.0.0/10')
+            kube=['kubectl','--kubeconfig=/etc/kubernetes/admin.conf']
+            node=json.loads(subprocess.check_output(kube+['get','node',name,'-o','json']))
+            assert ip in [a['address'] for a in node['status']['addresses'] if a['type']=='InternalIP']
+            pods=json.loads(subprocess.check_output(kube+['get','pods','-n','ingress-system','-l','app.kubernetes.io/name=traefik','-o','json']))['items']
+            local=[p for p in pods if p['spec'].get('nodeName')==name]
+            assert len(local)==1 and any(c['type']=='Ready' and c['status']=='True' for c in local[0]['status']['conditions'])
+            with urllib.request.urlopen('http://'+ip+':32080/ping',timeout=10) as r:assert r.status==200
+          - "{{ inventory_hostname }}"
+          - "{{ ingress_vpn_address.stdout | trim }}"
+      changed_when: false
+
+- name: Activate local ingress with the other VPS as a checked fallback
+  hosts: msk:fin
+  become: true
+  gather_facts: false
+  serial: 1
+  any_errors_fatal: true
+  vars_files: [vars/overlay.yml]
+  tasks:
+    - name: Resolve backend addresses without publishing operational IPs
+      ansible.builtin.set_fact:
+        overlay_ingress_backends:
+          msk: "{{ hostvars['msk'].ingress_vpn_address.stdout | trim }}"
+          fin: "{{ hostvars['fin'].ingress_vpn_address.stdout | trim }}"
+      no_log: true
+
+    - name: Inspect previous activation
+      ansible.builtin.stat:
+        path: "{{ overlay_root }}/ingress-backends.json"
+      register: ingress_edge_state
+
+    - name: Protect an existing activation identity
+      when: ingress_edge_state.stat.exists
+      block:
+        - ansible.builtin.slurp:
+            src: "{{ overlay_root }}/ingress-backends.json"
+          register: ingress_edge_previous
+          no_log: true
+        - ansible.builtin.assert:
+            that:
+              - (ingress_edge_previous.content | b64decode | from_json).owner == 'infra-flux/ansible/ingress-edge'
+              - (ingress_edge_previous.content | b64decode | from_json).backends == overlay_ingress_backends
+          no_log: true
+
+    - name: Save the explicitly activated routing for future overlay reruns
+      ansible.builtin.copy:
+        dest: "{{ overlay_root }}/ingress-backends.json"
+        content: "{{ {'owner': 'infra-flux/ansible/ingress-edge', 'backends': overlay_ingress_backends} | to_nice_json }}\n"
+        mode: '0600'
+      no_log: true
+
+    - name: Validate and atomically install the shared router configuration
+      ansible.builtin.template:
+        src: overlay/haproxy.cfg.j2
+        dest: "{{ overlay_root }}/haproxy.cfg"
+        mode: '0644'
+        validate: /usr/sbin/haproxy -c -f %s
+      register: ingress_edge_config
+
+    - name: Reload the edge gracefully without dropping established DERP sessions
+      ansible.builtin.systemd_service:
+        name: infra-overlay-edge
+        state: reloaded
+      when: ingress_edge_config.changed
+
+    - name: Verify existing coordinator and relay TLS routes
+      ansible.builtin.uri:
+        url: "https://{{ item }}{{ '/health' if item == headscale_hostname else '/derp/probe' }}"
+        status_code: 200
+      loop: "{{ [derp_hosts[inventory_hostname].hostname] + ([headscale_hostname] if inventory_hostname == headscale_active_host else []) }}"

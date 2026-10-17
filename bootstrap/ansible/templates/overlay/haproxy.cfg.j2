@@ -15,8 +15,14 @@ frontend public_http
     bind :80
     mode http
     acl acme_challenge path_beg /.well-known/acme-challenge/
-    use_backend acme if acme_challenge
-    http-request redirect scheme https code 301 unless acme_challenge
+    acl overlay_host hdr(host) -i {{ headscale_hostname }} {{ derp_hosts.msk.hostname }} {{ derp_hosts.fin.hostname }}
+    use_backend acme if overlay_host acme_challenge
+    http-request redirect scheme https code 301 if overlay_host !acme_challenge
+{% if overlay_ingress_backends | default({}) %}
+    default_backend cluster_ingress_http
+{% else %}
+    http-request deny unless overlay_host
+{% endif %}
 
 backend acme
     mode http
@@ -29,11 +35,15 @@ frontend public_tls
     tcp-request content accept if { req.ssl_hello_type 1 }
     use_backend derp if { req.ssl_sni -i {{ derp_hosts[inventory_hostname].hostname }} }
     use_backend headscale if { req.ssl_sni -i {{ headscale_hostname }} }
+{% if overlay_ingress_backends | default({}) %}
+    default_backend cluster_ingress_tls
+{% else %}
     default_backend reject_tls
+{% endif %}
 
 backend derp
     mode tcp
-    server derper 127.0.0.1:{{ overlay_derp_port }} check source {{ ansible_facts.default_ipv4.address }}
+    server derper {{ overlay_ns_service_address.split('/')[0] }}:{{ overlay_derp_port }} check source {{ overlay_ns_host_address.split('/')[0] }}
 
 backend headscale
     mode tcp
@@ -42,3 +52,26 @@ backend headscale
 backend reject_tls
     mode tcp
     tcp-request content reject
+{% if overlay_ingress_backends | default({}) %}
+
+backend cluster_ingress_http
+    mode http
+    http-request del-header X-Forwarded-For
+    http-request set-header X-Forwarded-Proto http
+    option forwardfor
+    option httpchk GET /ping
+    http-check expect status 200
+    default-server inter 2s fall 3 rise 2
+{% for node in [inventory_hostname] + (['msk', 'fin'] | difference([inventory_hostname])) %}
+    server {{ node }} {{ overlay_ingress_backends[node] }}:32080 check source {{ overlay_ingress_backends[inventory_hostname] }}{{ ' backup' if node != inventory_hostname else '' }}
+{% endfor %}
+
+backend cluster_ingress_tls
+    mode tcp
+    option httpchk GET /ping
+    http-check expect status 200
+    default-server inter 2s fall 3 rise 2
+{% for node in [inventory_hostname] + (['msk', 'fin'] | difference([inventory_hostname])) %}
+    server {{ node }} {{ overlay_ingress_backends[node] }}:32443 check port 32080 send-proxy-v2 source {{ overlay_ingress_backends[inventory_hostname] }}{{ ' backup' if node != inventory_hostname else '' }}
+{% endfor %}
+{% endif %}

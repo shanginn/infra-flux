@@ -57,7 +57,7 @@ ssh <SSH-алиас> python3 - < scripts/unified/verify-phase1.py
 /tmp/infra-unified-venv/bin/ansible-playbook overlay.yml -e @/path/to/private-overlay.yml
 ```
 
-HAProxy передаёт TLS по SNI; HTTP-01 обслуживает отдельный постоянный webroot. Сертификаты продлеваются таймером `infra-overlay-renew.timer`. Headscale работает в отдельном network namespace без default route и NAT. Встроенный DERP и публичная DERP-карта Tailscale отключены. Собственная карта содержит обе службы. Секретные ключи создаются на серверах и в Git не попадают.
+HAProxy передаёт TLS по SNI; HTTP-01 обслуживает отдельный постоянный webroot. Сертификаты продлеваются таймером `infra-overlay-renew.timer`. Headscale и отдельный DERP работают в изолированном network namespace без default route и NAT; STUN остаётся на host. HAProxy обращается к DERP через veth с нелокальным адресом источника: служебный `/debug/` остаётся запрещён, а защита loopback в kube-proxy не блокирует relay. DERP проверяет клиентов через файловый Unix socket host tailscaled, доступный из этого namespace. Встроенный DERP и публичная DERP-карта Tailscale отключены. Собственная карта содержит обе службы. Секретные ключи создаются на серверах и в Git не попадают.
 
 DERP принимает только узлы, известные локальному tailscaled. До регистрации клиентов relay отвергает подключения. `overlay.yml` не регистрирует клиентов. Проверка membership использует локальную netmap; после перезапуска tailscaled доступность зависит от восстановления этой карты.
 

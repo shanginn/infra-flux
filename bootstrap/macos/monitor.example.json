@@ -1,0 +1,5 @@
+{
+  "ssh_aliases": ["k8s-msk", "k8s-fin"],
+  "cluster_uid": "REPLACE_WITH_VERIFIED_KUBE_SYSTEM_UID",
+  "ca_sha256": "REPLACE_WITH_VERIFIED_DER_CA_SHA256"
+}

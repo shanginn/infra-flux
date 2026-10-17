@@ -1,0 +1,9 @@
+{
+  "zone": "apps.shanginn.io",
+  "responsible": "hostmaster.shanginn.io",
+  "ttl": 30,
+  "targets": {
+    "msk": "157.228.139.163",
+    "fin": "89.35.119.225"
+  }
+}

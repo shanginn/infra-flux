@@ -4,5 +4,6 @@ resources:
   - networking
   - flux-system
   - ingress
+  - public-dns
   - monitoring
   - garage

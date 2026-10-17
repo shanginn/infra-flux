@@ -1,0 +1,10 @@
+apps.shanginn.io:53 {
+    errors
+    file /zones/apps.db apps.shanginn.io {
+        reload 1s
+    }
+    loadbalance
+    health :8080
+    ready :8181
+    prometheus :9153
+}

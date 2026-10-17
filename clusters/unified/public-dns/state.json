@@ -1,0 +1,10 @@
+{
+  "serial": 2026101701,
+  "active": ["fin", "msk"],
+  "health": {
+    "msk": {"up": true, "streak": 0},
+    "fin": {"up": true, "streak": 0}
+  },
+  "all_down": false,
+  "last_probe": 0
+}

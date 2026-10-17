@@ -4,6 +4,18 @@
 [bootstrap/ansible](bootstrap/ansible/README.md). Версии пакетов, inventory и
 конфигурация containerd задаются файлами в этой директории.
 
+- [Установка, добавление ноды и замена VPS](bootstrap/ansible/CLUSTER.md)
+- [Headscale, DERP и восстановление координатора](bootstrap/ansible/README.md#headscale-и-derp-вне-kubernetes)
+- [PostgreSQL и переключение primary](clusters/unified/postgres/README.md)
+- [Garage: ёмкость, доступ и расширение](clusters/unified/garage/README.md)
+- [Публичный DNS и ingress](clusters/unified/public-dns/README.md)
+- [Мониторинг](clusters/unified/monitoring/README.md), [резервные копии на Mac](bootstrap/macos/README.md) и [управляемые отказные проверки](bootstrap/tests/README.md)
+
+Конфигурация единого кластера находится в `clusters/unified`. Каталоги
+`clusters/contabo` и `clusters/rubase` описывают прежние отдельные кластеры;
+новый Flux не подключает их автоматически. Приватные параметры и секреты
+передаются отдельно от Git. Инструкции ниже относятся к прежним кластерам.
+
 # Установка
 ## Токен GitHub
 https://github.com/settings/tokens?type=beta

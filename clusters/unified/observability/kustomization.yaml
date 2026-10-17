@@ -25,6 +25,7 @@ configMapGenerator:
       - dashboards/unified-vpn.json
       - dashboards/unified-backups.json
       - dashboards/unified-logs.json
+      - dashboards/unified-errors.json
 generatorOptions:
   annotations:
     # Grafana variables/macros must not be consumed by Flux postBuild substitution.

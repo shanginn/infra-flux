@@ -20,7 +20,7 @@ spec:
         app.kubernetes.io/name: glitchtip
         app.kubernetes.io/component: web
       annotations:
-        infra.shanginn.io/config-revision: 6.2.6-1
+        infra.shanginn.io/config-revision: 6.2.6-2
     spec:
       automountServiceAccountToken: false
       enableServiceLinks: false
@@ -265,7 +265,7 @@ spec:
         app.kubernetes.io/name: glitchtip
         app.kubernetes.io/component: worker
       annotations:
-        infra.shanginn.io/config-revision: 6.2.6-1
+        infra.shanginn.io/config-revision: 6.2.6-2
     spec:
       automountServiceAccountToken: false
       enableServiceLinks: false

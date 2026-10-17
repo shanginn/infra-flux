@@ -1,0 +1,57 @@
+---
+- name: Inspect or install bounded host detail metrics without exposing new ports
+  hosts: unified
+  become: true
+  gather_facts: false
+  any_errors_fatal: true
+  vars:
+    monitoring_detail_apply: false
+    monitoring_detail_expected_identity: {}
+  tasks:
+    - name: Require the complete inventory and explicit writes outside check mode
+      ansible.builtin.assert:
+        that:
+          - ansible_play_hosts_all | sort == ['fin', 'home', 'msk']
+          - not monitoring_detail_apply | bool or not ansible_check_mode
+    - name: Inspect root-owned prerequisites and current Node identity
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/python3
+          - -c
+          - "{{ lookup('file', playbook_dir ~ '/files/monitoring-detail.py', rstrip=False) }}"
+          - inspect
+          - --node
+          - "{{ inventory_hostname }}"
+      check_mode: false
+      changed_when: false
+      register: monitoring_detail_inspection
+    - name: Show identity and enabled collector components for private review
+      ansible.builtin.debug:
+        msg: "{{ monitoring_detail_inspection.stdout | from_json }}"
+    - name: Require reviewed identities for all nodes before install
+      ansible.builtin.assert:
+        that:
+          - monitoring_detail_expected_identity.keys() | list | sort == ['fin', 'home', 'msk']
+      when: monitoring_detail_apply | bool
+    - name: Install only owned collector files and start its timer
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/python3
+          - -c
+          - "{{ lookup('file', playbook_dir ~ '/files/monitoring-detail.py', rstrip=False) }}"
+          - install
+          - --node
+          - "{{ inventory_hostname }}"
+          - --review-json
+          - "{{ monitoring_detail_expected_identity[inventory_hostname] | to_json }}"
+          - --source
+          - "{{ lookup('file', playbook_dir ~ '/files/monitoring-detail.py', rstrip=False) }}"
+          - --source-sha256
+          - "{{ lookup('file', playbook_dir ~ '/files/monitoring-detail.py', rstrip=False) | hash('sha256') }}"
+      register: monitoring_detail_result
+      changed_when: (monitoring_detail_result.stdout | from_json).changed
+      when: monitoring_detail_apply | bool
+    - name: Show successful initial bounded collection proof
+      ansible.builtin.debug:
+        msg: "{{ monitoring_detail_result.stdout | from_json }}"
+      when: monitoring_detail_apply | bool

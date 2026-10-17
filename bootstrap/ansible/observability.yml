@@ -1,0 +1,143 @@
+---
+- name: Prepare owned observability databases, scoped S3 access and runtime Secrets
+  hosts: unified
+  become: true
+  gather_facts: false
+  any_errors_fatal: true
+  vars:
+    observability_prepare_enabled: false
+    observability_action: prepare
+    observability_timeout_review: {}
+    # The only previous deployed helper accepted by this revision. Future
+    # maintenance must review its exact hash instead of matching an owner string.
+    observability_previous_helper_sha256: 07f92e46bffd4793f215d296d78338ad49a5578e96c10389f4ddb78c420bb4c3
+  tasks:
+    - name: Keep runtime unchanged unless explicitly enabled
+      ansible.builtin.meta: end_play
+      when: not observability_prepare_enabled | bool
+
+    - name: Require the existing complete cluster and explicit identity
+      ansible.builtin.assert:
+        that:
+          - not ansible_check_mode
+          - ansible_play_hosts_all | sort == ['fin', 'home', 'msk']
+          - observability_cluster_uid is defined
+          - observability_ca_sha256 is defined
+          - observability_action in ['prepare', 'inspect-glitchtip-timeout', 'reconcile-glitchtip-timeout']
+          - observability_action != 'reconcile-glitchtip-timeout' or observability_timeout_review.keys() | sort == ['expected_secret_data_sha256', 'expected_secret_resource_version', 'expected_secret_uid']
+          - observability_action == 'reconcile-glitchtip-timeout' or observability_timeout_review | length == 0
+
+    - name: Verify every destination before writing private recovery state
+      ansible.builtin.command:
+        argv:
+          - python3
+          - -c
+          - |
+            import hashlib,json,pathlib,stat,sys,types
+            root=pathlib.Path('/etc/infra-flux')
+            m=json.loads((root/'kubeadm-state.json').read_text())
+            assert m['managed_by']=='infra-flux/ansible/kubeadm'
+            assert m['ca_sha256']==sys.argv[1]==hashlib.sha256(pathlib.Path('/etc/kubernetes/pki/ca.crt').read_bytes()).hexdigest()
+            assert m['node_name']==sys.argv[3]
+            assert root.stat().st_uid==0 and not root.stat().st_mode & 0o022
+            module=types.ModuleType('reviewed_prepare')
+            exec(compile(sys.argv[4],'<reviewed-prepare>','exec'),module.__dict__)
+            p=root/'observability-runtime.json'
+            assert not root.is_symlink() and not p.is_symlink()
+            identity=None
+            if p.exists():
+              s=module.read_state(p)
+              assert s['ca_sha256']==sys.argv[1] and s['cluster_uid']==sys.argv[2]
+              identity=module.recovery_identity(s)
+            helper=root/'observability-prepare.py'
+            assert not helper.is_symlink()
+            if helper.exists():
+              h=helper.stat()
+              assert stat.S_ISREG(h.st_mode) and h.st_uid==0 and not h.st_mode & 0o077
+              assert hashlib.sha256(helper.read_bytes()).hexdigest() in (sys.argv[5],hashlib.sha256(sys.argv[4].encode()).hexdigest())
+            print(json.dumps({'state_exists':p.exists(),'state_identity':identity}))
+          - '{{ observability_ca_sha256 }}'
+          - '{{ observability_cluster_uid }}'
+          - '{{ inventory_hostname }}'
+          - "{{ lookup('ansible.builtin.file', playbook_dir ~ '/files/observability-prepare.py', rstrip=False) }}"
+          - '{{ observability_previous_helper_sha256 }}'
+      changed_when: false
+      register: observability_preflight
+
+    - name: Retain only non-secret recovery identity hashes
+      ansible.builtin.set_fact:
+        observability_recovery_identity: '{{ observability_preflight.stdout | from_json }}'
+
+    - name: Refuse regenerated source credentials or conflicting recovery copies
+      ansible.builtin.assert:
+        that:
+          - hostvars['msk'].observability_recovery_identity.state_exists or (ansible_play_hosts_all | map('extract', hostvars, 'observability_recovery_identity') | selectattr('state_exists') | list | length == 0)
+          - ansible_play_hosts_all | map('extract', hostvars, 'observability_recovery_identity') | selectattr('state_exists') | map(attribute='state_identity') | unique | list | length <= 1
+        fail_msg: Restore/review the original recovery bundle; do not overwrite differing passwords or keys.
+      run_once: true
+
+    - name: Install preparation helper on the fixed provisioning node
+      ansible.builtin.copy:
+        src: files/observability-prepare.py
+        dest: /etc/infra-flux/observability-prepare.py
+        mode: '0700'
+        owner: root
+        group: root
+      when: inventory_hostname == 'msk' and observability_action != 'inspect-glitchtip-timeout'
+
+    - name: Prepare scoped databases and application credentials once
+      ansible.builtin.command:
+        argv:
+          - python3
+          - -c
+          - "{{ lookup('ansible.builtin.file', playbook_dir ~ '/files/observability-prepare.py', rstrip=False) }}"
+        stdin: "{{ {'enabled': true, 'action': observability_action, 'cluster_uid': observability_cluster_uid, 'ca_sha256': observability_ca_sha256} | combine(observability_timeout_review) | to_json }}"
+      delegate_to: msk
+      run_once: true
+      register: observability_prepared
+      no_log: true
+      changed_when: observability_action != 'inspect-glitchtip-timeout' and (observability_prepared.stdout | from_json).get('changed', true)
+
+    - name: Read the prepared recovery bundle without displaying credentials
+      ansible.builtin.slurp:
+        src: /etc/infra-flux/observability-runtime.json
+      delegate_to: msk
+      run_once: true
+      register: observability_bundle
+      no_log: true
+      when: observability_action != 'inspect-glitchtip-timeout'
+
+    - name: Recheck existing credentials before distributing the prepared state
+      ansible.builtin.command:
+        argv:
+          - python3
+          - -c
+          - |
+            import json,pathlib,sys,types
+            module=types.ModuleType('reviewed_prepare')
+            exec(compile(sys.argv[1],'<reviewed-prepare>','exec'),module.__dict__)
+            incoming=json.load(sys.stdin)
+            p=pathlib.Path('/etc/infra-flux/observability-runtime.json')
+            assert not p.is_symlink()
+            if p.exists():
+              assert module.recovery_identity(module.read_state(p))==module.recovery_identity(incoming)
+          - "{{ lookup('ansible.builtin.file', playbook_dir ~ '/files/observability-prepare.py', rstrip=False) }}"
+        stdin: '{{ observability_bundle.content | b64decode }}'
+      changed_when: false
+      no_log: true
+      when: observability_action != 'inspect-glitchtip-timeout'
+
+    - name: Preserve the same recovery identity on every node for encrypted backups
+      ansible.builtin.copy:
+        dest: /etc/infra-flux/observability-runtime.json
+        content: '{{ observability_bundle.content | b64decode }}'
+        owner: root
+        group: root
+        mode: '0600'
+      no_log: true
+      when: observability_action != 'inspect-glitchtip-timeout'
+
+    - name: Report only the bounded non-secret result
+      ansible.builtin.debug:
+        msg: '{{ observability_prepared.stdout | from_json }}'
+      run_once: true

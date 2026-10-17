@@ -585,17 +585,17 @@
       }
     },
     {
-      "title": "Expected host services currently inactive",
+      "title": "Host service state mismatches",
       "type": "timeseries",
       "datasource": {
         "type": "prometheus",
         "uid": "$datasource"
       },
-      "description": "",
+      "description": "Counts required services that are inactive and unexpected active services, including a standby Headscale coordinator.",
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by(node)(clamp_min(infra_service_expected_active{node=~\"$node\"}-infra_service_active{node=~\"$node\"},0))",
+          "expr": "sum by(node)(abs(infra_service_expected_active{node=~\"$node\"}-infra_service_active{node=~\"$node\"}))",
           "legendFormat": "{{node}} {{gpu}} {{component}}"
         }
       ],

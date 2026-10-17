@@ -13,7 +13,7 @@ The admin Secret initializes Grafana; changing its password later in a Secret do
 
 ## Dashboards and data sources
 
-The provisioned folder contains nodes, Kubernetes workloads, control plane, PostgreSQL, Garage, ingress/DNS, VPN, backups, and logs. Panels distinguish missing data from healthy zero values. Rates require a sufficient scrape window; narrow windows and newly started targets can be empty. Workload dashboards cover observed infrastructure and resource behavior; they do not prove business transactions or automatically instrument application exceptions.
+The ten provisioned dashboards cover nodes, Kubernetes workloads, control plane, PostgreSQL, Garage, ingress/DNS, VPN, backups, logs, and application error tracking. The error-tracking dashboard links to GlitchTip and shows its capacity guard, queue, worker activity, process metrics and scrape health. Shared database and queue gauges use max across replicas; task counters are summed. SDK/DSN integration and a verified canary are required to establish application exception delivery. Panels distinguish missing data from healthy zero values. Rates require a sufficient scrape window; narrow windows and newly started targets can be empty. Workload dashboards cover observed infrastructure and resource behavior; they do not prove business transactions or automatically instrument application exceptions.
 
 Select **Prometheus replica 0** or **Prometheus replica 1** using the dashboard data-source selector. They are separate time series databases; ordinal numbers are not site names. Explicit selection keeps a query on one history and avoids double-counting two collectors. If a replica is unavailable, select the other. This setup does not merge history or provide automatic data-source failover.
 

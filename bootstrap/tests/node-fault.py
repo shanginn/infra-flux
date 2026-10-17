@@ -120,7 +120,10 @@ def rollback(state):
     # Reboot has no software power-on rollback. It must return by normal boot.
     if state['kind'] == 'reboot':
         require(boot_id() != state['boot_id'] or state['phase'] in ('arming', 'armed', 'rolled-back'), 'Node has not completed its reboot')
-    state.update(phase='rolled-back', rollback_unix=time.time(), current_boot_id=boot_id())
+    # finish restores idempotently too; retain the first completed restoration
+    # rather than turning its later verification into the measured outage end.
+    state.setdefault('rollback_unix', time.time())
+    state.update(phase='rolled-back', current_boot_id=boot_id())
     atomic(ROOT / 'active.json', state)
     return state
 

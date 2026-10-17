@@ -1,0 +1,48 @@
+{
+  "repository": "~/Backups/infra-unified",
+  "minimum_free_bytes": 21474836480,
+  "daily_time": "03:30",
+  "jobs": [
+    {
+      "name": "headscale",
+      "component": "headscale",
+      "enabled": true,
+      "ssh_aliases": ["k8s-fin"],
+      "hostname": "vpn.shanginn.io",
+      "max_bytes": 134217728
+    },
+    {
+      "name": "etcd",
+      "component": "etcd",
+      "enabled": false,
+      "offline_restore_check": true,
+      "ssh_aliases": ["k8s-msk", "k8s-fin"],
+      "cluster_name": "unified",
+      "max_bytes": 268435456
+    },
+    {
+      "name": "node-msk",
+      "component": "node-config",
+      "enabled": false,
+      "ssh_aliases": ["k8s-msk"],
+      "cluster_name": "unified",
+      "max_bytes": 134217728
+    },
+    {
+      "name": "node-fin",
+      "component": "node-config",
+      "enabled": false,
+      "ssh_aliases": ["k8s-fin"],
+      "cluster_name": "unified",
+      "max_bytes": 134217728
+    },
+    {
+      "name": "node-home",
+      "component": "node-config",
+      "enabled": false,
+      "ssh_aliases": ["homelab-vpn"],
+      "cluster_name": "unified",
+      "max_bytes": 134217728
+    }
+  ]
+}

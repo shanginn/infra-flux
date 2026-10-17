@@ -1,0 +1,280 @@
+---
+- name: Configure encrypted coordinator recovery snapshots on the standby
+  hosts: msk:fin
+  become: true
+  gather_facts: false
+  any_errors_fatal: true
+  vars_files:
+    - vars/overlay.yml
+    - vars/headscale-backup.yml
+
+  pre_tasks:
+    - name: Require distinct source and standby with private transport settings
+      ansible.builtin.assert:
+        that:
+          - headscale_active_host != headscale_backup_standby_host
+          - inventory_hostname in [headscale_active_host, headscale_backup_standby_host]
+          - headscale_backup_ssh_port is defined
+          - headscale_backup_ssh_port | int >= 1
+          - headscale_backup_ssh_port | int <= 65535
+          - overlay_tailnet_prefix is defined
+          - headscale_backup_age_version is defined
+          - headscale_backup_keep | int >= 1
+          - headscale_backup_keep | int <= 1000
+
+    - name: Read overlay installation ownership
+      ansible.builtin.slurp:
+        src: /etc/infra-flux/overlay.json
+      register: headscale_backup_overlay_raw
+
+    - name: Refuse installations outside the managed overlay
+      ansible.builtin.assert:
+        that:
+          - (headscale_backup_overlay_raw.content | b64decode | from_json).owner == 'infra-flux/ansible/overlay'
+          - (headscale_backup_overlay_raw.content | b64decode | from_json).coordinator == (inventory_hostname == headscale_active_host)
+
+    - name: Inspect backup ownership
+      ansible.builtin.stat:
+        path: /etc/infra-flux/headscale-backup.json
+      register: headscale_backup_marker
+
+    - name: Read backup ownership
+      ansible.builtin.slurp:
+        src: /etc/infra-flux/headscale-backup.json
+      register: headscale_backup_marker_raw
+      when: headscale_backup_marker.stat.exists
+
+    - name: Validate existing backup ownership
+      ansible.builtin.assert:
+        that:
+          - (headscale_backup_marker_raw.content | b64decode | from_json).owner == headscale_backup_owner
+      when: headscale_backup_marker.stat.exists
+
+    - name: Inspect recovery data directory
+      ansible.builtin.stat:
+        path: /var/lib/infra-headscale-recovery
+      register: headscale_backup_existing_data
+
+    - name: Refuse adoption of unrelated recovery keys or snapshots
+      ansible.builtin.assert:
+        that:
+          - headscale_backup_marker.stat.exists or not headscale_backup_existing_data.stat.exists
+
+    - name: Read the enrolled VPN state
+      ansible.builtin.command:
+        argv: [/usr/bin/tailscale, status, --json]
+      register: headscale_backup_vpn_status
+      changed_when: false
+      no_log: true
+
+    - name: Require an enrolled client
+      ansible.builtin.assert:
+        that:
+          - (headscale_backup_vpn_status.stdout | from_json).BackendState == 'Running'
+      no_log: true
+
+    - name: Select the private transport address at runtime
+      ansible.builtin.set_fact:
+        headscale_backup_vpn_address: "{{ (headscale_backup_vpn_status.stdout | from_json).TailscaleIPs | select('match', '^[0-9]+[.]') | first }}"
+        cacheable: false
+      no_log: true
+
+  tasks:
+    - name: Record backup ownership
+      ansible.builtin.copy:
+        dest: /etc/infra-flux/headscale-backup.json
+        content: "{{ {'owner': headscale_backup_owner} | to_nice_json }}\n"
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Install age and configuration parsing dependencies
+      ansible.builtin.apt:
+        name:
+          - "age={{ headscale_backup_age_version }}"
+          - "python3-yaml={{ headscale_backup_yaml_version }}"
+          - openssh-client
+          - openssl
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+        policy_rc_d: 101
+        fail_on_autoremove: true
+        allow_change_held_packages: true
+        allow_downgrade: false
+
+    - name: Hold the pinned encryption package
+      ansible.builtin.dpkg_selections:
+        name: age
+        selection: hold
+
+    - name: Create private recovery storage on the standby
+      ansible.builtin.file:
+        path: /var/lib/infra-headscale-recovery
+        state: directory
+        owner: root
+        group: root
+        mode: '0700'
+      when: inventory_hostname == headscale_backup_standby_host
+
+    - name: Generate the age identity only on the standby
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/age-keygen
+          - -o
+          - /var/lib/infra-headscale-recovery/identity.age
+        creates: /var/lib/infra-headscale-recovery/identity.age
+      when: inventory_hostname == headscale_backup_standby_host
+      no_log: true
+
+    - name: Read the public encryption recipient
+      ansible.builtin.command:
+        argv: [/usr/bin/age-keygen, -y, /var/lib/infra-headscale-recovery/identity.age]
+      register: headscale_backup_recipient
+      changed_when: false
+      when: inventory_hostname == headscale_backup_standby_host
+      no_log: true
+
+    - name: Generate a dedicated pull SSH identity on the standby
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/ssh-keygen
+          - -t
+          - ed25519
+          - -N
+          - ''
+          - -C
+          - infra-headscale-backup
+          - -f
+          - /var/lib/infra-headscale-recovery/pull_ed25519
+        creates: /var/lib/infra-headscale-recovery/pull_ed25519
+      when: inventory_hostname == headscale_backup_standby_host
+      no_log: true
+
+    - name: Enforce private key permissions
+      ansible.builtin.file:
+        path: "{{ item }}"
+        owner: root
+        group: root
+        mode: '0600'
+      loop:
+        - /var/lib/infra-headscale-recovery/identity.age
+        - /var/lib/infra-headscale-recovery/pull_ed25519
+      when: inventory_hostname == headscale_backup_standby_host
+      no_log: true
+
+    - name: Read the public pull SSH key
+      ansible.builtin.slurp:
+        src: /var/lib/infra-headscale-recovery/pull_ed25519.pub
+      register: headscale_backup_pull_public
+      when: inventory_hostname == headscale_backup_standby_host
+      no_log: true
+
+    - name: Read configured SSH host public keys through the existing trusted connection
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/python3
+          - -c
+          - |
+            import json,pathlib,subprocess
+            settings=subprocess.run(['/usr/sbin/sshd','-T'],capture_output=True,text=True,check=True).stdout
+            paths=[line.split(' ',1)[1] for line in settings.splitlines() if line.startswith('hostkey ')]
+            keys=[]
+            for name in paths:
+                if pathlib.Path(name).is_file():
+                    public=subprocess.run(['/usr/bin/ssh-keygen','-y','-f',name],capture_output=True,text=True,check=True).stdout.strip()
+                    keys.append(public)
+            assert keys, 'No configured SSH host keys found'
+            print(json.dumps(keys))
+      register: headscale_backup_host_public
+      when: inventory_hostname == headscale_active_host
+      changed_when: false
+      no_log: true
+
+    - name: Install the snapshot and fenced recovery utility
+      ansible.builtin.copy:
+        src: files/headscale-backup.py
+        dest: "{{ overlay_bin }}/headscale-backup.py"
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: Install runtime-derived recovery settings
+      ansible.builtin.template:
+        src: headscale-backup/config.json.j2
+        dest: /etc/infra-overlay/headscale-backup.json
+        owner: root
+        group: root
+        mode: '0600'
+      no_log: true
+
+    - name: Pin the source SSH host key on the standby
+      ansible.builtin.template:
+        src: headscale-backup/known_hosts.j2
+        dest: /var/lib/infra-headscale-recovery/known_hosts
+        owner: root
+        group: root
+        mode: '0600'
+      when: inventory_hostname == headscale_backup_standby_host
+      no_log: true
+
+    - name: Keep the existing root SSH directory protected
+      ansible.builtin.file:
+        path: /root/.ssh
+        state: directory
+        owner: root
+        group: root
+        mode: '0700'
+      when: inventory_hostname == headscale_active_host
+
+    - name: Authorize only encrypted snapshots from the standby VPN address
+      ansible.builtin.lineinfile:
+        path: /root/.ssh/authorized_keys
+        create: true
+        owner: root
+        group: root
+        mode: '0600'
+        regexp: '^restrict,from=.* infra-headscale-backup$'
+        line: 'restrict,from="{{ hostvars[headscale_backup_standby_host].headscale_backup_vpn_address }}",command="/usr/bin/python3 {{ overlay_bin }}/headscale-backup.py snapshot" {{ hostvars[headscale_backup_standby_host].headscale_backup_pull_public.content | b64decode | trim }}'
+      when: inventory_hostname == headscale_active_host
+      no_log: true
+
+    - name: Install the standby backup service and timer
+      ansible.builtin.template:
+        src: "headscale-backup/{{ item }}.j2"
+        dest: "/etc/systemd/system/infra-headscale-{{ item }}"
+        owner: root
+        group: root
+        mode: '0644'
+      loop:
+        - backup.service
+        - backup.timer
+      register: headscale_backup_units
+      when: inventory_hostname == headscale_backup_standby_host
+
+    - name: Create the monitoring textfile directory
+      ansible.builtin.file:
+        path: /var/lib/node_exporter/textfile_collector
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+      when: inventory_hostname == headscale_backup_standby_host
+
+    - name: Reload the standby service manager
+      ansible.builtin.systemd_service:
+        daemon_reload: true
+      when: inventory_hostname == headscale_backup_standby_host and headscale_backup_units.changed
+
+    - name: Create and verify an initial encrypted recovery snapshot
+      ansible.builtin.systemd_service:
+        name: infra-headscale-backup.service
+        state: started
+      when: inventory_hostname == headscale_backup_standby_host
+
+    - name: Enable the standby snapshot schedule
+      ansible.builtin.systemd_service:
+        name: infra-headscale-backup.timer
+        state: "{{ 'restarted' if headscale_backup_units.changed else 'started' }}"
+        enabled: true
+      when: inventory_hostname == headscale_backup_standby_host

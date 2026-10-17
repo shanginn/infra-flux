@@ -1,0 +1,14 @@
+{{ {
+  'owner': headscale_backup_owner,
+  'role': 'source' if inventory_hostname == headscale_active_host else 'standby',
+  'source_host': headscale_active_host,
+  'headscale_version': headscale_version,
+  'hostname': headscale_hostname,
+  'server_url': 'https://' + headscale_hostname,
+  'tailnet_prefix': overlay_tailnet_prefix,
+  'recipient': hostvars[headscale_backup_standby_host].headscale_backup_recipient.stdout | trim,
+  'source_address': hostvars[headscale_active_host].headscale_backup_vpn_address,
+  'ssh_port': headscale_backup_ssh_port | int,
+  'keep': headscale_backup_keep | int,
+  'max_bytes': headscale_backup_max_bytes | int
+} | to_nice_json }}

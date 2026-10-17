@@ -1,0 +1,10 @@
+[Unit]
+Description=Keep an encrypted standby copy of Headscale state
+
+[Timer]
+OnCalendar=*-*-* *:00,15,30,45:00
+RandomizedDelaySec=30s
+Persistent=true
+
+[Install]
+WantedBy=timers.target

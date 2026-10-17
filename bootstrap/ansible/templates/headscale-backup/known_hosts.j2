@@ -1,0 +1,3 @@
+{% for public_key in hostvars[headscale_active_host].headscale_backup_host_public.stdout | from_json %}
+{{ hostvars[headscale_active_host].headscale_backup_vpn_address if headscale_backup_ssh_port | int == 22 else '[' ~ hostvars[headscale_active_host].headscale_backup_vpn_address ~ ']:' ~ (headscale_backup_ssh_port | string) }} {{ public_key }}
+{% endfor %}

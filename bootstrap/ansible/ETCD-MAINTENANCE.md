@@ -80,11 +80,12 @@ those require a separately reviewed maintenance revision.
 A lower threshold can repeatedly interrupt legitimate recovery after a long
 absence, especially when a larger database needs a full snapshot across a slow
 WAN. Keep a margin above measured cold replay/snapshot recovery time and revisit
-the policy as the backend grows. The existing `PodCrashLooping` alert requires
-more than three restarts in 15 minutes for five minutes; it is not a reliable
-alarm for an exact five-minute startup loop. A dedicated etcd startup-restart
-alert (for example at least two restarts in 20 minutes) remains needed before
-relying on automatic notification of that case.
+the policy as the backend grows. `EtcdRepeatedRestarts` reports at least two
+etcd container restarts in 20 minutes, sustained for one minute. It covers slow
+startup loops that the broader `PodCrashLooping` threshold might miss, without
+asserting that startup was the cause. Verify that the monitoring revision has
+reconciled before applying this procedure. Notification delivery still depends
+on the configured monitoring channel and its availability.
 
 References: [Kubernetes probe guidance](https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-probes/),
 [etcd snapshot catch-up](https://etcd.io/docs/v3.6/op-guide/maintenance/).

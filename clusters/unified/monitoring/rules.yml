@@ -214,6 +214,11 @@ groups:
         annotations: {summary: Prometheus dropped a scrape because its sample budget was exceeded}
   - name: etcd-readonly
     rules:
+      - alert: EtcdRepeatedRestarts
+        expr: max by (namespace,pod,container) (increase(kube_pod_container_status_restarts_total{namespace="kube-system",container="etcd",pod=~"etcd-(home|msk|fin)"}[20m])) >= 2
+        for: 1m
+        labels: {severity: warning}
+        annotations: {summary: 'etcd {{ $labels.pod }} restarted at least twice in 20 minutes; inspect startup, catch-up and transport health'}
       - alert: EtcdMetricsUnavailable
         expr: up{job="etcd"} == 0
         for: 3m

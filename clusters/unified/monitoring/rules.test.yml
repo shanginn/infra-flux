@@ -1,0 +1,29 @@
+rule_files:
+  - rules.yml
+evaluation_interval: 1m
+tests:
+  - name: Detect repeated etcd restarts without warning on a single restart or unrelated container
+    interval: 1m
+    input_series:
+      - series: 'kube_pod_container_status_restarts_total{namespace="kube-system",pod="etcd-home",container="etcd",instance="ksm-one"}'
+        values: '0+0x4 1+0x4 2+0x10'
+      - series: 'kube_pod_container_status_restarts_total{namespace="kube-system",pod="etcd-home",container="etcd",instance="ksm-two"}'
+        values: '0+0x4 1+0x4 2+0x10'
+      - series: 'kube_pod_container_status_restarts_total{namespace="kube-system",pod="etcd-fin",container="etcd",instance="ksm-one"}'
+        values: '0+0x4 1+0x15'
+      - series: 'kube_pod_container_status_restarts_total{namespace="kube-system",pod="kube-apiserver-msk",container="kube-apiserver",instance="ksm-one"}'
+        values: '0+1x20'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: EtcdRepeatedRestarts
+        exp_alerts: []
+      - eval_time: 11m
+        alertname: EtcdRepeatedRestarts
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              namespace: kube-system
+              pod: etcd-home
+              container: etcd
+            exp_annotations:
+              summary: 'etcd etcd-home restarted at least twice in 20 minutes; inspect startup, catch-up and transport health'

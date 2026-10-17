@@ -1,0 +1,99 @@
+scope: unified-postgres
+namespace: /service
+log:
+  level: INFO
+  deduplicate_heartbeat_logs: false
+restapi:
+  listen: 0.0.0.0:8008
+  allowlist: [127.0.0.1/32]
+  allowlist_include_members: true
+  server_tokens: Minimal
+kubernetes:
+  use_endpoints: true
+  bypass_api_service: true
+  scope_label: cluster-name
+  role_label: role
+  labels:
+    app.kubernetes.io/name: patroni
+    cluster-name: unified-postgres
+  ports:
+    - {name: postgresql, port: 5432}
+bootstrap:
+  dcs:
+    ttl: 60
+    loop_wait: 5
+    retry_timeout: 5
+    primary_start_timeout: 0
+    synchronous_mode: false
+    synchronous_mode_strict: false
+    failsafe_mode: false
+    check_timeline: true
+    maximum_lag_on_failover: 16777216
+    member_slots_ttl: 5min
+    postgresql:
+      use_pg_rewind: true
+      use_slots: true
+      parameters:
+        wal_level: replica
+        wal_log_hints: 'on'
+        synchronous_commit: 'on'
+        synchronous_standby_names: ''
+        max_wal_senders: 10
+        max_replication_slots: 10
+        max_slot_wal_keep_size: 8GB
+        wal_keep_size: 256MB
+        max_wal_size: 2GB
+        min_wal_size: 256MB
+        checkpoint_timeout: 5min
+        checkpoint_completion_target: 0.9
+        wal_sender_timeout: 30s
+        wal_receiver_timeout: 30s
+        archive_mode: 'off'
+        max_connections: 100
+        shared_buffers: 512MB
+        effective_cache_size: 2GB
+        work_mem: 4MB
+        maintenance_work_mem: 128MB
+        password_encryption: scram-sha-256
+        ssl: 'on'
+        ssl_cert_file: /etc/postgres-tls/tls.crt
+        ssl_key_file: /etc/postgres-tls/tls.key
+        ssl_ca_file: /etc/postgres-tls/ca.crt
+  initdb:
+    - encoding: UTF8
+    - data-checksums
+  pg_hba:
+    - local all postgres peer
+    - local all all scram-sha-256
+    - hostssl replication replicator __POD_CIDR__ scram-sha-256
+    - hostssl all all __POD_CIDR__ scram-sha-256
+    - host all all 0.0.0.0/0 reject
+    - host all all ::/0 reject
+postgresql:
+  listen: 0.0.0.0:5432
+  data_dir: /var/lib/postgresql/data/pgdata
+  pgpass: /run/patroni/pgpass
+  bin_dir: /usr/lib/postgresql/18/bin
+  use_unix_socket: true
+  parameters:
+    unix_socket_directories: /run/postgresql
+  create_replica_methods: [basebackup]
+  basebackup:
+    max-rate: 25M
+    checkpoint: spread
+  remove_data_directory_on_rewind_failure: false
+  remove_data_directory_on_diverged_timelines: false
+  authentication:
+    superuser: {}
+    replication:
+      sslmode: verify-ca
+      sslrootcert: /etc/postgres-tls/ca.crt
+    rewind:
+      sslmode: verify-ca
+      sslrootcert: /etc/postgres-tls/ca.crt
+watchdog:
+  mode: required
+  device: /dev/patroni-watchdog
+  safety_margin: -1
+tags:
+  nosync: true

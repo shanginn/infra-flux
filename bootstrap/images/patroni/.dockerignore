@@ -1,0 +1,8 @@
+**
+!Dockerfile
+!requirements.lock
+!build-requirements.lock
+!entrypoint.py
+!manual-promotion-gate.py
+!verify-runtime.py
+!image-smoke.py

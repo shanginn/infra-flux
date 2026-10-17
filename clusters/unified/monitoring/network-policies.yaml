@@ -49,6 +49,12 @@ spec:
         - {port: 2381, protocol: TCP}
         - {port: 6443, protocol: TCP}
     - to:
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: public-dns}}
+          podSelector: {matchLabels: {app: public-dns}}
+      ports:
+        - {port: 9153, protocol: TCP}
+        - {port: 9080, protocol: TCP}
+    - to:
         - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: garage}}
           podSelector: {matchLabels: {app.kubernetes.io/name: garage}}
       ports:

@@ -23,6 +23,20 @@ alerting:
         - {source_labels: [__meta_kubernetes_pod_container_port_name], regex: http, action: keep}
         - {source_labels: [__meta_kubernetes_pod_ready], regex: 'true', action: keep}
 scrape_configs:
+  - job_name: public-dns
+    target_limit: 4
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces: {names: [public-dns]}
+    relabel_configs:
+      - {source_labels: [__meta_kubernetes_pod_label_app], regex: public-dns, action: keep}
+      - {source_labels: [__meta_kubernetes_pod_container_port_name], regex: 'dns-metrics|agent-metrics', action: keep}
+      - {source_labels: [__meta_kubernetes_pod_container_port_name], target_label: endpoint}
+      - {source_labels: [__meta_kubernetes_pod_node_name], target_label: node}
+    metric_relabel_configs:
+      - source_labels: [__name__]
+        regex: 'infra_dns_.*|coredns_dns_requests_total|coredns_dns_responses_total|coredns_dns_request_duration_seconds_.*|coredns_panics_total|process_.*'
+        action: keep
   - job_name: garage
     target_limit: 3
     kubernetes_sd_configs:

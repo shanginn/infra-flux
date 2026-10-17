@@ -1,4 +1,108 @@
 groups:
+  - name: public-dns
+    rules:
+      - alert: PublicDNSAllIngressTargetsDown
+        expr: infra_dns_all_targets_down == 1
+        for: 1m
+        labels: {severity: critical}
+        annotations: {summary: 'Public DNS agent on {{ $labels.node }} sees both ingress targets unavailable'}
+      - alert: PublicDNSProbesStale
+        expr: time() - max(infra_dns_last_probe_timestamp_seconds) > 90
+        for: 1m
+        labels: {severity: critical}
+        annotations: {summary: Public DNS health probes have not refreshed within 90 seconds}
+      - alert: PublicDNSZoneSyncStale
+        expr: time() - infra_dns_zone_sync_timestamp_seconds > 60
+        for: 2m
+        labels: {severity: warning}
+        annotations: {summary: 'Public DNS zone synchronization is stale on {{ $labels.node }}'}
+      - alert: PublicDNSMetricsReplicasMissing
+        expr: ((count(up{job="public-dns",endpoint="agent-metrics"} == 1) or vector(0)) < 2) and on () (max(kube_daemonset_status_desired_number_scheduled{namespace="public-dns",daemonset="public-dns"}) > 0)
+        for: 3m
+        labels: {severity: critical}
+        annotations: {summary: Fewer than two configured public DNS agents are observable}
+      - alert: PublicDNSSerialDivergence
+        expr: max(infra_dns_zone_serial) != min(infra_dns_zone_serial)
+        for: 30s
+        labels: {severity: warning}
+        annotations: {summary: Public DNS replicas report different zone serials for over 30 seconds}
+      - alert: PublicDNSAPIErrors
+        expr: increase(infra_dns_api_errors_total[10m]) > 0
+        for: 2m
+        labels: {severity: warning}
+        annotations: {summary: 'Public DNS agent API errors observed on {{ $labels.node }}'}
+  - name: postgres-host-collector
+    rules:
+      - alert: PostgresCollectionFailed
+        expr: infra_postgres_collect_success == 0
+        for: 3m
+        labels: {severity: warning}
+        annotations: {summary: 'Read-only PostgreSQL metrics collection failed on {{ $labels.node }}'}
+      - alert: PostgresCollectionStale
+        expr: time() - infra_postgres_last_success_timestamp_seconds > 300
+        for: 2m
+        labels: {severity: critical}
+        annotations: {summary: 'PostgreSQL metrics have no recent successful collection on {{ $labels.node }}'}
+      - alert: PostgresCollectionMissing
+        expr: (infra_storage_configured{component="postgres",destination="local"} == 1) unless on (instance) infra_postgres_collect_success
+        for: 5m
+        labels: {severity: warning}
+        annotations: {summary: 'Configured PostgreSQL collector has no status metric on {{ $labels.node }}'}
+      - alert: PostgresDataBudgetWarning
+        expr: infra_postgres_data_bytes > 19327352832
+        for: 10m
+        labels: {severity: warning}
+        annotations: {summary: 'PostgreSQL physical files exceed 18 GiB on {{ $labels.node }}; the 24 GiB budget is not a filesystem quota'}
+      - alert: PostgresDataBudgetCritical
+        expr: infra_postgres_data_bytes > 22548578304
+        for: 5m
+        labels: {severity: critical}
+        annotations: {summary: 'PostgreSQL physical files exceed 21 GiB on {{ $labels.node }}'}
+      - alert: PostgresWALBudgetWarning
+        expr: infra_postgres_wal_bytes > 6442450944
+        for: 10m
+        labels: {severity: warning}
+        annotations: {summary: 'PostgreSQL WAL exceeds 6 GiB on {{ $labels.node }}'}
+      - alert: PostgresWALBudgetCritical
+        expr: infra_postgres_wal_bytes > 8589934592
+        for: 5m
+        labels: {severity: critical}
+        annotations: {summary: 'PostgreSQL WAL exceeds 8 GiB on {{ $labels.node }}; checkpoint and slot limits are soft bounds'}
+      - alert: PostgresLostReplicationSlot
+        expr: infra_postgres_lost_slots > 0
+        for: 2m
+        labels: {severity: critical}
+        annotations: {summary: 'A PostgreSQL replication slot lost retained WAL on {{ $labels.node }}; the replica may need a fresh base backup'}
+      - alert: PostgresSlotWALReserveLow
+        expr: infra_postgres_min_slot_safe_wal_bytes < 1073741824
+        for: 5m
+        labels: {severity: warning}
+        annotations: {summary: 'Less than 1 GiB remains before a PostgreSQL slot can lose retained WAL on {{ $labels.node }}'}
+      - alert: PostgresReplayLagHigh
+        expr: infra_postgres_max_replay_lag_bytes > 16777216
+        for: 10m
+        labels: {severity: warning}
+        annotations: {summary: 'A PostgreSQL replica is more than 16 MiB behind the primary reported by {{ $labels.node }}'}
+      - alert: PostgresPrimaryCountUnexpected
+        expr: sum(infra_postgres_primary) != 1
+        for: 5m
+        labels: {severity: critical}
+        annotations: {summary: 'Observed PostgreSQL primary count differs from one; missing metrics must also be investigated'}
+      - alert: PostgresStreamingReplicasMissing
+        expr: (infra_postgres_streaming_replicas < 2) and on (instance) (infra_postgres_primary == 1)
+        for: 10m
+        labels: {severity: warning}
+        annotations: {summary: 'PostgreSQL primary on {{ $labels.node }} has fewer than two streaming replicas; bootstrap may temporarily trigger this alert'}
+      - alert: PostgresAsyncReplicasMissing
+        expr: (infra_postgres_async_replicas < 2) and on (instance) (infra_postgres_primary == 1)
+        for: 10m
+        labels: {severity: warning}
+        annotations: {summary: 'PostgreSQL primary on {{ $labels.node }} has fewer than two asynchronous replicas'}
+      - alert: PostgresTLSExpirySoon
+        expr: infra_postgres_tls_expiry_timestamp_seconds - time() < 1209600
+        for: 1h
+        labels: {severity: warning}
+        annotations: {summary: 'PostgreSQL TLS certificate expires within 14 days on {{ $labels.node }}'}
   - name: garage
     rules:
       - alert: GarageMetricsUnavailable

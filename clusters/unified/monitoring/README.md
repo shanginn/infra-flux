@@ -52,3 +52,13 @@ Alertmanager сейчас использует **пустой receiver** `pendin
 Источники: [Prometheus releases](https://prometheus.io/download/), [storage/retention](https://prometheus.io/docs/prometheus/latest/storage/), [kube-state-metrics 2.20.0](https://github.com/kubernetes/kube-state-metrics/releases/tag/v2.20.0), [DERP HTTP probe](https://github.com/tailscale/tailscale/blob/main/cmd/derper/derper.go).
 
 Сервисная подсеть берётся из `${SERVICE_CIDR}` через обязательный root Flux `postBuild.substituteFrom` runtime ConfigMap `flux-system/unified-network`. Перед локальной проверкой NetworkPolicy подставить значение из защищённого inventory.
+
+## PostgreSQL
+
+Host timer каждые 120 секунд выполняет ограниченные read-only SQL/размерные проверки и атомарно публикует `infra_postgres_*` через node-exporter textfile. `collect_timestamp_seconds` относится к попытке, `last_success_timestamp_seconds` обновляется только после всей успешной выборки. При ошибке collector выставляет `collect_success=0` и не выдаёт прошлые SQL-значения за свежие; отсутствие/просрочка метрик требуют проверки независимо от состояния базы.
+
+Порог physical data: предупреждение18GiB, critical21GiB при логическом бюджете24GiB. WAL6/8GiB, потерянные slots, запас retained WAL<1GiB, replay lag>16MiB и TLS<14days контролируются отдельно. `max_slot_wal_keep_size` действует с checkpoint и не является дисковой quota. Сумма наблюдаемых primary должна быть1; основной сервер должен видеть две streaming async replicas. Во время поэтапной начальной установки предупреждение о недостающих репликах ожидаемо; после включения всех трёх требует разбирательства. Эти метрики не доказывают отсутствие split-brain вне доступной наблюдателю части сети, успешный failover или нулевой RPO.
+
+## Public DNS
+
+Job `public-dns` читает CoreDNS9153 и health-agent9080 на двух VPS; namespace stack выдаёт Prometheus только read-only Pod discovery. Проверяются актуальность probes и синхронизации zone, serial divergence, API errors и доступность обоих targets. Проверка отсутствия двух агентов включается только при существующем desired DaemonSet. HTTP/metrics success не доказывает делегирование публичного домена, прохождение внешнего DNS-трафика или переключение ingress: это отдельные внешние проверки.

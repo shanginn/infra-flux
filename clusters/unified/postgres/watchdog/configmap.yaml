@@ -6,7 +6,8 @@ metadata:
 data:
   patroni.yaml: |
     scope: unified-postgres
-    namespace: /service
+    # Patroni propagates this value to Kubernetes DCS, overriding its section.
+    namespace: database
     log:
       level: INFO
       deduplicate_heartbeat_logs: false

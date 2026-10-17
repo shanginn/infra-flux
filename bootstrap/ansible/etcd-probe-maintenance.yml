@@ -1,0 +1,98 @@
+---
+# Explicit maintenance; does not change the immutable kubeadm bootstrap inputs.
+- name: Inspect every node before reviewing an etcd startup-probe change
+  hosts: control_plane
+  become: true
+  gather_facts: false
+  any_errors_fatal: true
+  vars: &probe_defaults
+    etcd_probe_apply: false
+    etcd_probe_failure_threshold: 30
+    etcd_probe_period_seconds: 10
+    etcd_probe_timeout_seconds: 5
+    etcd_probe_expected_manifest_sha256: {}
+  tasks:
+    - name: Require the complete independent control-plane topology
+      ansible.builtin.assert:
+        that:
+          - ansible_play_hosts_all | sort == ['fin', 'home', 'msk']
+          - groups['control_plane'] | sort == ansible_play_hosts_all | sort
+          - not etcd_probe_apply | bool or not ansible_check_mode
+
+    - name: Inspect identity, exact manifest and health without changing files
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/python3
+          - -c
+          - "{{ lookup('ansible.builtin.file', playbook_dir ~ '/files/etcd-probe-maintenance.py') }}"
+          - inspect
+          - --node
+          - "{{ inventory_hostname }}"
+          - --threshold
+          - "{{ etcd_probe_failure_threshold | string }}"
+          - --period
+          - "{{ etcd_probe_period_seconds | string }}"
+          - --timeout
+          - "{{ etcd_probe_timeout_seconds | string }}"
+      check_mode: false
+      changed_when: false
+      register: etcd_probe_inspection
+
+    - name: Retain the inspected identity for the serial maintenance phase
+      ansible.builtin.set_fact:
+        etcd_probe_identity: "{{ etcd_probe_inspection.stdout | from_json }}"
+
+    - name: Require the same CA on all three nodes
+      ansible.builtin.assert:
+        that:
+          - groups['control_plane'] | map('extract', hostvars, 'etcd_probe_identity') | map(attribute='ca_sha256') | unique | list | length == 1
+
+    - name: Show the concrete three-field change and preimage for review
+      ansible.builtin.debug:
+        var: etcd_probe_identity
+
+- name: Apply the reviewed probe change one healthy node at a time
+  hosts: control_plane
+  order: sorted
+  serial: 1
+  become: true
+  gather_facts: false
+  any_errors_fatal: true
+  vars: *probe_defaults
+  tasks:
+    - name: Keep inspection as the default action
+      ansible.builtin.meta: end_host
+      when: not etcd_probe_apply | bool
+
+    - name: Require explicit reviewed SHA256 values for every node
+      ansible.builtin.assert:
+        that:
+          - not ansible_check_mode
+          - etcd_probe_expected_manifest_sha256.keys() | list | sort == ['fin', 'home', 'msk']
+          - etcd_probe_expected_manifest_sha256[inventory_hostname] is match('^[0-9a-f]{64}$')
+
+    - name: Patch only the approved scalars and wait for stable full recovery
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/python3
+          - -c
+          - "{{ lookup('ansible.builtin.file', playbook_dir ~ '/files/etcd-probe-maintenance.py') }}"
+          - apply
+          - --node
+          - "{{ inventory_hostname }}"
+          - --ca-sha256
+          - "{{ etcd_probe_identity.ca_sha256 }}"
+          - --expected-sha256
+          - "{{ etcd_probe_expected_manifest_sha256[inventory_hostname] }}"
+          - --threshold
+          - "{{ etcd_probe_failure_threshold | string }}"
+          - --period
+          - "{{ etcd_probe_period_seconds | string }}"
+          - --timeout
+          - "{{ etcd_probe_timeout_seconds | string }}"
+      register: etcd_probe_result
+      changed_when: (etcd_probe_result.stdout | from_json).changed
+
+    - name: Show stable runtime readback
+      ansible.builtin.debug:
+        msg: "{{ etcd_probe_result.stdout | from_json }}"

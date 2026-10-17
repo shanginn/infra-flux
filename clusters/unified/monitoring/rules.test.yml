@@ -116,3 +116,73 @@ tests:
         exp_alerts:
           - exp_labels: {instance: 'standby:9100', node: standby, service: infra-headscale.service, severity: critical}
             exp_annotations: {summary: 'Service infra-headscale.service on standby differs from its declared active/standby state'}
+  - name: configured-loki-missing-owned-mount-metric-alerts
+    interval: 1m
+    input_series:
+      - series: 'kube_deployment_spec_replicas{namespace="logging",deployment="loki",instance="ksm1"}'
+        values: '1+0x10'
+      - series: 'kube_deployment_spec_replicas{namespace="logging",deployment="loki",instance="ksm2"}'
+        values: '1+0x10'
+      - series: 'node_filesystem_avail_bytes{node="home",mountpoint="/"}'
+        values: '1000000000+0x10'
+      - series: 'node_filesystem_avail_bytes{node="msk",mountpoint="/var/lib/infra-logging/loki"}'
+        values: '1000000000+0x10'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: LokiFilesystemMetricsMissing
+        exp_alerts: []
+      - eval_time: 6m
+        alertname: LokiFilesystemMetricsMissing
+        exp_alerts:
+          - exp_labels: {severity: warning}
+            exp_annotations: {summary: 'Configured Loki filesystem has no free-space metric; inspect its mount and collector permissions'}
+  - name: disabled-loki-does-not-alert-on-missing-or-error-metric
+    interval: 1m
+    input_series:
+      - series: 'kube_deployment_spec_replicas{namespace="logging",deployment="loki"}'
+        values: '0+0x10'
+      - series: 'node_filesystem_device_error{node="home",mountpoint="/var/lib/infra-logging/loki"}'
+        values: '1+0x10'
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: LokiFilesystemMetricsMissing
+        exp_alerts: []
+      - eval_time: 6m
+        alertname: LokiFilesystemCollectionFailed
+        exp_alerts: []
+  - name: configured-loki-owned-mount-error-alerts
+    interval: 1m
+    input_series:
+      - series: 'kube_deployment_spec_replicas{namespace="logging",deployment="loki"}'
+        values: '1+0x10'
+      - series: 'node_filesystem_device_error{node="home",mountpoint="/var/lib/infra-logging/loki",device="/dev/loop0",device_error="permission denied"}'
+        values: '1+0x10'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: LokiFilesystemCollectionFailed
+        exp_alerts: []
+      - eval_time: 3m
+        alertname: LokiFilesystemCollectionFailed
+        exp_alerts:
+          - exp_labels: {node: home, severity: warning}
+            exp_annotations: {summary: 'Node exporter cannot inspect the owned Loki filesystem on home'}
+  - name: healthy-loki-mount-does-not-alert-on-unrelated-filesystem-error
+    interval: 1m
+    input_series:
+      - series: 'kube_deployment_spec_replicas{namespace="logging",deployment="loki"}'
+        values: '1+0x10'
+      - series: 'node_filesystem_avail_bytes{node="home",mountpoint="/var/lib/infra-logging/loki"}'
+        values: '1000000000+0x10'
+      - series: 'node_filesystem_device_error{node="home",mountpoint="/var/lib/infra-logging/loki"}'
+        values: '0+0x10'
+      - series: 'node_filesystem_device_error{node="home",mountpoint="/run/containerd/other"}'
+        values: '1+0x10'
+      - series: 'node_filesystem_device_error{node="msk",mountpoint="/var/lib/infra-logging/loki"}'
+        values: '1+0x10'
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: LokiFilesystemMetricsMissing
+        exp_alerts: []
+      - eval_time: 6m
+        alertname: LokiFilesystemCollectionFailed
+        exp_alerts: []

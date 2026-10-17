@@ -169,6 +169,15 @@ PDB сохраняет по одному экземпляру при добро�
 PostgreSQL async: failover может потерять последние подтверждённые события/задачи.
 S3 RF3 и бэкапы не превращают асинхронную DB репликацию в синхронную.
 
+Зашифрованные копии на Mac включают DB через `pg_dumpall`, bucket через
+[Garage exporter](../../../bootstrap/macos/GARAGE.md), а runtime secrets — через
+node-config. PostgreSQL и S3 копируются независимо, без общего атомарного snapshot.
+Для согласованной точки восстановления приостановить приём событий и остальные
+изменения, дождаться завершения задач, остановить worker/lifecycle deletion на
+время обеих копий. После восстановления проверить ссылки DB на S3-объекты и
+повторить SDK canary; успешное восстановление каждой части отдельно не доказывает
+их взаимную согласованность. Не удалять отсутствующие/лишние объекты автоматически.
+
 Источники: [установка](https://glitchtip.com/documentation/install/),
 [6.2.6 source/changelog](https://gitlab.com/glitchtip/glitchtip-backend/-/blob/v6.2.6/CHANGELOG),
 [SDK](https://glitchtip.com/sdkdocs/),

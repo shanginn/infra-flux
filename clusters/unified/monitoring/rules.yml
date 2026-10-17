@@ -382,6 +382,16 @@ groups:
         annotations: {summary: 'Managed certificate {{ $labels.namespace }}/{{ $labels.name }} expires within 14 days'}
   - name: bounded-observability-storage
     rules:
+      - alert: LokiFilesystemMetricsMissing
+        expr: (max(kube_deployment_spec_replicas{namespace="logging",deployment="loki"}) > 0) unless on () node_filesystem_avail_bytes{node="home",mountpoint="/var/lib/infra-logging/loki"}
+        for: 5m
+        labels: {severity: warning}
+        annotations: {summary: 'Configured Loki filesystem has no free-space metric; inspect its mount and collector permissions'}
+      - alert: LokiFilesystemCollectionFailed
+        expr: (max by (node) (node_filesystem_device_error{node="home",mountpoint="/var/lib/infra-logging/loki"}) == 1) and on () (max(kube_deployment_spec_replicas{namespace="logging",deployment="loki"}) > 0)
+        for: 2m
+        labels: {severity: warning}
+        annotations: {summary: 'Node exporter cannot inspect the owned Loki filesystem on {{ $labels.node }}'}
       - alert: LoggingVolumeSpaceLow
         expr: (node_filesystem_avail_bytes{mountpoint="/var/lib/infra-logging/loki"} < 536870912) and on () (max(kube_deployment_spec_replicas{namespace="logging",deployment="loki"}) > 0)
         for: 5m

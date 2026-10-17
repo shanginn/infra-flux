@@ -73,6 +73,47 @@ Upstream `ENABLE_USER_REGISTRATION=false` разрешает самого пер
 
 Приложения используют обычный Sentry SDK с DSN своего проекта. Создавать отдельный
 проект на приложение; DSN даёт только возможность отправки, а не чтения ошибок.
+
+В интерфейсе `https://errors.apps.shanginn.io` открыть организацию `unified`,
+создать проект приложения и скопировать его DSN из настроек проекта. Передавать
+его через runtime Secret/переменную `SENTRY_DSN`, а не коммитить в Git. Проект
+`platform-canary` предназначен для проверки платформы. Существующие приложения
+не начинают отправлять ошибки автоматически: SDK подключается в их исходниках.
+
+Пример Python с установленным `sentry-sdk`:
+
+```python
+import os
+import sentry_sdk
+
+sentry_sdk.init(
+    dsn=os.environ["SENTRY_DSN"],
+    environment=os.environ.get("APP_ENV", "production"),
+    release=os.environ.get("APP_RELEASE"),
+    send_default_pii=False,
+    traces_sample_rate=0.0,
+)
+```
+
+Пример Node.js с `@sentry/node`, выполняемый до импорта приложения:
+
+```javascript
+import * as Sentry from "@sentry/node";
+
+Sentry.init({
+  dsn: process.env.SENTRY_DSN,
+  environment: process.env.APP_ENV ?? "production",
+  release: process.env.APP_RELEASE,
+  sendDefaultPii: false,
+  tracesSampleRate: 0,
+});
+```
+
+Для браузера использовать соответствующий Sentry SDK и публичный HTTPS DSN;
+не передавать в frontend пароль администратора или API token. Сначала отправить
+одно искусственное исключение и проверить issue в нужном проекте. Для метрик
+приложения отдельно включить [Prometheus opt-in](../monitoring/README.md).
+
 Начать с `send_default_pii=false`, tracing выключен или с малой выборкой;
 session replay/profiling/Sentry-specific features не считать поддержанными без
 отдельной проверки. Логи и uptime GlitchTip выключены, их собирает общий стек.

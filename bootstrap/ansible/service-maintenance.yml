@@ -1,0 +1,106 @@
+---
+# Maintenance is separate from the immutable kubeadm bootstrap fingerprint.
+- name: Disable the unused packaged HAProxy without stopping any service
+  hosts: unified
+  become: true
+  gather_facts: false
+  strategy: linear
+  any_errors_fatal: true
+  vars:
+    unified_disable_stock_haproxy: false
+  tasks:
+    - name: Leave service settings unchanged unless explicitly requested
+      ansible.builtin.meta: end_play
+      when: not unified_disable_stock_haproxy | bool
+
+    - name: Require the complete original topology
+      ansible.builtin.assert:
+        that:
+          - not ansible_check_mode
+          - ansible_play_hosts_all | sort == ['fin', 'home', 'msk']
+          - groups['control_plane'] | sort == ansible_play_hosts_all | sort
+
+    - name: Inspect ownership, CA, running proxies and unchanged packaged service
+      ansible.builtin.command: &inspect_haproxy
+        argv:
+          - /usr/bin/python3
+          - -c
+          - |
+            import hashlib,json,pathlib,stat,subprocess,sys
+            node=sys.argv[1]
+            def read(path):
+                p=pathlib.Path(path);s=p.lstat()
+                assert stat.S_ISREG(s.st_mode) and s.st_uid==0 and not s.st_mode&0o022, path+' is not a trusted regular file'
+                return p.read_bytes()
+            def run(args):
+                return subprocess.run(args,check=True,text=True,capture_output=True,timeout=15).stdout.strip()
+            def unit(name):
+                fields='LoadState,ActiveState,SubState,UnitFileState,DropInPaths,FragmentPath,MainPID,NeedDaemonReload'
+                return dict(line.split('=',1) for line in run(['systemctl','show',name,'--property='+fields]).splitlines())
+            phase=json.loads(read('/etc/infra-flux/phase1.json'))
+            assert phase['managed_by']=='infra-flux/ansible/phase1', 'Unknown OS preparation owner'
+            marker=json.loads(read('/etc/infra-flux/kubeadm-state.json'))
+            assert marker['managed_by']=='infra-flux/ansible/kubeadm' and marker['cluster_name']=='unified' and marker['node_name']==node, 'Cluster ownership mismatch'
+            ca=hashlib.sha256(read('/etc/kubernetes/pki/ca.crt')).hexdigest()
+            assert ca==marker['ca_sha256'], 'Cluster CA changed'
+            def proxy(name,config):
+                u=unit(name)
+                assert u['LoadState']=='loaded' and u['ActiveState']=='active' and u['SubState']=='running' and u['UnitFileState']=='enabled', name+' is not active and enabled'
+                assert u['FragmentPath']=='/etc/systemd/system/'+name and not u['DropInPaths'] and u['NeedDaemonReload']=='no', name+' has unexpected unit overrides'
+                pid=int(u['MainPID']);assert pid>0
+                process=pathlib.Path('/proc')/str(pid)
+                argv=(process/'cmdline').read_bytes().split(b'\0')
+                assert (process/'exe').resolve()==pathlib.Path('/usr/sbin/haproxy').resolve(), name+' executable mismatch'
+                assert argv.count(b'-f')==1 and argv[argv.index(b'-f')+1]==config.encode(), name+' config mismatch'
+                return {'pid':pid,'start_ticks':(process/'stat').read_text().rsplit(')',1)[1].split()[19],
+                        'unit_sha256':hashlib.sha256(read(u['FragmentPath'])).hexdigest(),
+                        'config_sha256':hashlib.sha256(read(config)).hexdigest()}
+            proxies={'api':proxy('infra-k8s-api-proxy.service','/etc/infra-flux/kubeadm/haproxy.cfg')}
+            if node in ('msk','fin'):
+                overlay=json.loads(read('/etc/infra-flux/overlay.json'))
+                assert overlay['owner']=='infra-flux/ansible/overlay', 'Unknown overlay owner'
+                proxies['overlay']=proxy('infra-overlay-edge.service','/etc/infra-overlay/haproxy.cfg')
+            stock=unit('haproxy.service')
+            assert stock['LoadState']=='loaded' and stock['ActiveState']=='inactive' and stock['SubState']=='dead' and stock['MainPID']=='0', 'Packaged HAProxy is not inactive'
+            assert stock['UnitFileState'] in ('enabled','disabled') and not stock['DropInPaths'] and stock['NeedDaemonReload']=='no', 'Packaged HAProxy has unexpected overrides/state'
+            assert stock['FragmentPath']=='/usr/lib/systemd/system/haproxy.service', 'Packaged unit was replaced'
+            assert run(['dpkg-query','--show','--showformat=${Status}','haproxy']) in ('install ok installed','hold ok installed'), 'Package is not fully installed'
+            conffiles=[line.split() for line in run(['dpkg-query','--show','--showformat=${Conffiles}','haproxy']).splitlines()]
+            for path in ('/etc/haproxy/haproxy.cfg','/etc/default/haproxy'):
+                rows=[row for row in conffiles if row and row[0]==path]
+                assert len(rows)==1 and len(rows[0])==2, 'Missing/obsolete packaged config: '+path
+                assert hashlib.md5(read(path)).hexdigest()==rows[0][1], 'Modified packaged config: '+path
+            packaged=[line.split() for line in read('/var/lib/dpkg/info/haproxy.md5sums').decode().splitlines()]
+            rows=[row for row in packaged if len(row)==2 and row[1]=='usr/lib/systemd/system/haproxy.service']
+            assert len(rows)==1 and hashlib.md5(read(stock['FragmentPath'])).hexdigest()==rows[0][0], 'Modified packaged unit'
+            print(json.dumps({'ca_sha256':ca,'stock_state':stock['UnitFileState'],'proxies':proxies}))
+          - "{{ inventory_hostname }}"
+      changed_when: false
+      register: stock_haproxy_before
+
+    - name: Save the inspected identity and process state on every host
+      ansible.builtin.set_fact:
+        stock_haproxy_identity: "{{ stock_haproxy_before.stdout | from_json }}"
+
+    - name: Require every inspected host to share the same cluster CA
+      ansible.builtin.assert:
+        that:
+          - groups['control_plane'] | map('extract', hostvars, 'stock_haproxy_identity') | map(attribute='ca_sha256') | unique | list | length == 1
+
+    - name: Disable only the packaged unit without start, stop or restart
+      ansible.builtin.systemd_service:
+        name: haproxy.service
+        enabled: false
+        daemon_reload: false
+
+    - name: Read back service settings, ownership and running process identities
+      ansible.builtin.command: *inspect_haproxy
+      changed_when: false
+      register: stock_haproxy_after
+
+    - name: Verify the stock unit is disabled and all owned proxies are unchanged
+      ansible.builtin.assert:
+        that:
+          - (stock_haproxy_after.stdout | from_json).stock_state == 'disabled'
+          - (stock_haproxy_after.stdout | from_json).ca_sha256 == stock_haproxy_identity.ca_sha256
+          - (stock_haproxy_after.stdout | from_json).proxies == stock_haproxy_identity.proxies

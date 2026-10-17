@@ -21,6 +21,8 @@ ansible-playbook gitops.yml -e @/path/to/private-cluster.yml -e @/path/to/privat
 
 На каждой ноде локальный HAProxy слушает `127.0.0.1:7443` и проверяет все три API. Имя `api.unified.internal` разрешается в loopback этой ноды. Клиентский TLS проходит до API; сертификат проверяет клиент. Скопированный kubeconfig с этим endpoint требует собственного SSH tunnel или локального proxy, а не публичного DNS A record.
 
+Для отключения автозапуска неиспользуемого штатного `haproxy.service` предусмотрен отдельный [service-maintenance.yml](service-maintenance.yml): `ansible-playbook service-maintenance.yml -e unified_disable_stock_haproxy=true`. Он требует все три исходные ноды, проверяет ownership markers, общий CA, работающие собственные прокси и неизменённые пакетные конфигурацию/unit штатной службы. Активная штатная служба или её overrides останавливают процедуру. Playbook меняет только автозапуск штатного unit; процессы API/overlay не останавливает и не перезапускает, bootstrap fingerprint не меняет.
+
 Ingress включается после готовности Traefik на обеих VPS:
 
 ```sh

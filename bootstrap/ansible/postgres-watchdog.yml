@@ -1,0 +1,109 @@
+---
+- name: Prepare an independent Patroni software watchdog only after approval
+  hosts: unified
+  become: true
+  gather_facts: false
+  serial: 1
+  any_errors_fatal: true
+  vars:
+    postgres_watchdog_prepare_enabled: false
+  tasks:
+    - name: Leave devices unchanged unless watchdog preparation was selected
+      ansible.builtin.meta: end_play
+      when: not postgres_watchdog_prepare_enabled | bool
+
+    - name: Require explicit acceptance of a possible reset of every database host
+      ansible.builtin.assert:
+        that:
+          - postgres_host_reset_approved | default(false) | bool
+          - not ansible_check_mode
+          - ansible_play_hosts_all | sort == ['fin', 'home', 'msk']
+          - postgres_image_smoke_verified | default(false) | bool
+          - postgres_cluster_uid is defined
+          - site in ['home', 'msk', 'fin']
+        fail_msg: Host reset and privileged PostgreSQL device access must be approved before this playbook runs.
+
+    - name: Inspect the dedicated preparation service
+      ansible.builtin.stat:
+        path: /etc/systemd/system/infra-patroni-watchdog.service
+      register: patroni_watchdog_unit
+
+    - name: Bind device preparation to the approved live cluster
+      ansible.builtin.command:
+        argv: [kubectl, --kubeconfig=/etc/kubernetes/admin.conf, get, namespace, kube-system, -o, 'jsonpath={.metadata.uid}']
+      changed_when: false
+      register: postgres_watchdog_cluster
+
+    - name: Require the approved cluster identity
+      ansible.builtin.assert:
+        that: postgres_watchdog_cluster.stdout == postgres_cluster_uid
+
+    - name: Inspect dedicated helper paths before first ownership
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop:
+        - /usr/local/sbin/infra-prepare-patroni-watchdog
+        - /etc/udev/rules.d/99-infra-patroni-watchdog.rules
+      register: postgres_watchdog_paths
+
+    - name: Refuse unowned helpers or rules
+      ansible.builtin.assert:
+        that:
+          - patroni_watchdog_unit.stat.exists or not (postgres_watchdog_paths.results | selectattr('stat.exists') | list | length)
+
+    - name: Read a previous preparation unit
+      ansible.builtin.slurp:
+        src: /etc/systemd/system/infra-patroni-watchdog.service
+      when: patroni_watchdog_unit.stat.exists
+      register: patroni_watchdog_previous
+
+    - name: Require an owned service before touching existing configuration
+      ansible.builtin.assert:
+        that:
+          - not patroni_watchdog_unit.stat.exists or '# Managed by infra-flux patroni watchdog' in (patroni_watchdog_previous.content | b64decode)
+
+    - name: Install the preparation helper
+      ansible.builtin.copy:
+        src: files/postgres/prepare-watchdog.py
+        dest: /usr/local/sbin/infra-prepare-patroni-watchdog
+        mode: '0700'
+
+    - name: Install a rule matching only the new software watchdog
+      ansible.builtin.copy:
+        dest: /etc/udev/rules.d/99-infra-patroni-watchdog.rules
+        mode: '0644'
+        content: 'SUBSYSTEM=="watchdog", ATTR{identity}=="Software Watchdog", OWNER="19999", GROUP="19999", MODE="0600", SYMLINK+="patroni-watchdog"'
+
+    - name: Reload udev rules without triggering the existing hardware device
+      ansible.builtin.command: udevadm control --reload-rules
+      changed_when: false
+
+    - name: Install startup ordering that preserves the existing home watchdog
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/infra-patroni-watchdog.service
+        mode: '0644'
+        content: |
+          # Managed by infra-flux patroni watchdog
+          [Unit]
+          Description=Prepare independent software watchdog for Patroni
+          After=systemd-udevd.service systemd-modules-load.service{{ ' watchdog.service' if site == 'home' else '' }}
+          {{ 'Requires=watchdog.service' if site == 'home' else '' }}
+          Before=kubelet.service
+          [Service]
+          Type=oneshot
+          RemainAfterExit=yes
+          ExecStart=/usr/local/sbin/infra-prepare-patroni-watchdog{{ ' --preserve-home-watchdog' if site == 'home' else '' }}
+          [Install]
+          WantedBy=multi-user.target
+
+    - name: Load the approved new device without opening or arming it
+      ansible.builtin.systemd_service:
+        name: infra-patroni-watchdog
+        daemon_reload: true
+        enabled: true
+        state: started
+
+    - name: Recheck same-boot ownership and preserve the hardware watchdog
+      ansible.builtin.command:
+        argv: "{{ ['/usr/local/sbin/infra-prepare-patroni-watchdog'] + (['--preserve-home-watchdog'] if site == 'home' else []) }}"
+      changed_when: false

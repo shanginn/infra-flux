@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: database
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+  annotations:
+    infra.shanginn.io/managed-by: infra-flux/ansible/postgres

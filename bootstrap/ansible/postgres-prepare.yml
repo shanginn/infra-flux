@@ -1,0 +1,80 @@
+---
+- name: Prepare owned PostgreSQL storage and runtime secrets without starting Pods
+  hosts: unified
+  become: true
+  gather_facts: false
+  any_errors_fatal: true
+  vars:
+    postgres_prepare_enabled: false
+  tasks:
+    - name: Leave hosts unchanged unless preparation was selected
+      ansible.builtin.meta: end_play
+      when: not postgres_prepare_enabled | bool
+
+    - name: Require the exact cluster identity and complete capacity reservation
+      ansible.builtin.assert:
+        that:
+          - not ansible_check_mode
+          - ansible_play_hosts_all | sort == ['fin', 'home', 'msk']
+          - postgres_cluster_uid is defined
+          - postgres_storage_other_reserve_gib is defined
+          - postgres_storage_other_reserve_gib | int >= 20
+        fail_msg: Reserve space for OS, etcd, Garage, monitoring, images and logs in addition to 24Gi PostgreSQL on every node.
+
+    - name: Inspect the protected recovery bundle on every node
+      ansible.builtin.stat:
+        path: /etc/infra-postgres/runtime.json
+      register: postgres_bundle
+
+    - name: Refuse loss of authority or inconsistent PostgreSQL recovery identity
+      ansible.builtin.assert:
+        that:
+          - not postgres_bundle.stat.exists or hostvars['msk'].postgres_bundle.stat.exists
+          - not postgres_bundle.stat.exists or postgres_bundle.stat.checksum == hostvars['msk'].postgres_bundle.stat.checksum
+          - not (postgres_bundle.stat.islnk | default(false))
+      no_log: true
+
+    - name: Validate each host and all three Ready nodes before any preparation
+      ansible.builtin.script:
+        cmd: "files/postgres/runtime.py check --cluster-uid {{ postgres_cluster_uid | quote }} --node {{ inventory_hostname }} --other-reserve-gib {{ postgres_storage_other_reserve_gib | int }}"
+        executable: /usr/bin/python3
+      changed_when: false
+
+    - name: Create owned empty directories without formatting or adopting data
+      ansible.builtin.script:
+        cmd: "files/postgres/runtime.py prepare --cluster-uid {{ postgres_cluster_uid | quote }} --node {{ inventory_hostname }} --other-reserve-gib {{ postgres_storage_other_reserve_gib | int }}"
+        executable: /usr/bin/python3
+
+    - name: Generate credentials and CA once on the authoritative node
+      ansible.builtin.script:
+        cmd: "files/postgres/runtime.py create --cluster-uid {{ postgres_cluster_uid | quote }}"
+        executable: /usr/bin/python3
+      delegate_to: msk
+      run_once: true
+      no_log: true
+
+    - name: Read protected runtime identity for off-node recovery copies
+      ansible.builtin.slurp:
+        src: /etc/infra-postgres/runtime.json
+      delegate_to: msk
+      run_once: true
+      register: postgres_shared_bundle
+      no_log: true
+
+    - name: Preserve the same identity on each independent host
+      ansible.builtin.copy:
+        dest: /etc/infra-postgres/runtime.json
+        content: "{{ postgres_shared_bundle.content | b64decode }}"
+        owner: root
+        group: root
+        mode: '0600'
+      no_log: true
+      diff: false
+
+    - name: Create missing runtime Secrets without replacing existing credentials
+      ansible.builtin.script:
+        cmd: "files/postgres/runtime.py publish --cluster-uid {{ postgres_cluster_uid | quote }}"
+        executable: /usr/bin/python3
+      delegate_to: msk
+      run_once: true
+      no_log: true

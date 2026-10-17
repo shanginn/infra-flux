@@ -1,0 +1,16 @@
+# Not included by Kustomize. Create an approval only AFTER independently proving
+# that the former primary is powered off and cannot restart. Missing SSH/ping,
+# Pod deletion, Service removal and drain are not fencing.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: unified-postgres-promotion-approval
+  namespace: database
+data:
+  state: denied
+  candidate_pod: ''
+  candidate_uid: ''
+  expires_unix: '0'
+  old_primary_verified_off: 'false'
+  fence_evidence: ''
+  operator: ''

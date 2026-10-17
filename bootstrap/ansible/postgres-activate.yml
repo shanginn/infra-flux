@@ -1,0 +1,96 @@
+---
+- name: Verify every prepared PostgreSQL host before requesting reconciliation
+  hosts: unified
+  become: true
+  gather_facts: false
+  any_errors_fatal: true
+  vars:
+    postgres_activate_enabled: false
+  tasks:
+    - name: Leave the controller inactive unless activation was selected
+      ansible.builtin.meta: end_play
+      when: not postgres_activate_enabled | bool
+
+    - name: Require explicit image, fencing and bootstrap decisions
+      ansible.builtin.assert:
+        that:
+          - not ansible_check_mode
+          - ansible_play_hosts_all | sort == ['fin', 'home', 'msk']
+          - postgres_cluster_uid is defined
+          - postgres_image_smoke_verified | default(false) | bool
+          - postgres_image is match('^ghcr.io/shanginn/infra-flux-patroni@sha256:[0-9a-f]{64}$')
+          - postgres_fencing_mode in ['watchdog', 'manual-verified-off']
+          - postgres_stage in ['bootstrap-msk', 'full']
+          - postgres_storage_other_reserve_gib | int >= 20
+          - postgres_host_reset_approved | default(false) | bool if postgres_fencing_mode == 'watchdog' else postgres_manual_fencing_policy_approved | default(false) | bool
+          - postgres_stage != 'full' or postgres_bootstrap_primary_verified | default(false) | bool
+
+    - name: Check cluster identity, data ownership and remaining storage reserves
+      ansible.builtin.script:
+        cmd: "files/postgres/runtime.py check --cluster-uid {{ postgres_cluster_uid | quote }} --node {{ inventory_hostname }} --other-reserve-gib {{ postgres_storage_other_reserve_gib | int }}"
+        executable: /usr/bin/python3
+      changed_when: false
+
+    - name: Inspect independent protected copies of the same runtime identity
+      ansible.builtin.stat:
+        path: /etc/infra-postgres/runtime.json
+      register: postgres_activation_bundle
+
+    - name: Require empty data and DCS for a first bootstrap instead of adopting an old primary
+      ansible.builtin.command:
+        argv:
+          - python3
+          - -c
+          - |
+            import json,pathlib,subprocess,sys
+            kube=['kubectl','--kubeconfig=/etc/kubernetes/admin.conf','--request-timeout=20s']
+            def get(args):
+              r=subprocess.run(kube+args,check=True,capture_output=True,text=True,timeout=30)
+              return json.loads(r.stdout) if r.stdout.strip() else None
+            current=get(['get','kustomization.kustomize.toolkit.fluxcd.io','unified-postgres','-n','flux-system','--ignore-not-found','-o','json'])
+            if current is None:
+              assert sys.argv[1]=='bootstrap-msk', 'An absent controller requires a new empty bootstrap or an explicit recovery procedure'
+              assert not any(pathlib.Path('/var/lib/infra-postgres/unified').iterdir()), 'Refuse to bootstrap over previous PostgreSQL data'
+              for resource in ('pods','endpoints'):
+                assert not get(['get',resource,'-n','database','-l','cluster-name=unified-postgres','-o','json'])['items'], 'Existing PostgreSQL DCS/workloads require recovery, not bootstrap'
+          - "{{ postgres_stage }}"
+      changed_when: false
+
+    - name: Require three matching protected recovery copies
+      ansible.builtin.assert:
+        that:
+          - postgres_activation_bundle.stat.exists
+          - not postgres_activation_bundle.stat.islnk
+          - postgres_activation_bundle.stat.uid == 0
+          - postgres_activation_bundle.stat.mode == '0600'
+          - postgres_activation_bundle.stat.checksum == hostvars['msk'].postgres_activation_bundle.stat.checksum
+      no_log: true
+
+    - name: Require an already prepared software watchdog without loading or opening it
+      ansible.builtin.command:
+        argv:
+          - python3
+          - -c
+          - |
+            import json,pathlib,os,stat
+            state=json.loads(pathlib.Path('/run/infra-patroni-watchdog/prepared.json').read_text())
+            assert state['managed_by']=='infra-patroni-watchdog'
+            assert state['boot_id']==pathlib.Path('/proc/sys/kernel/random/boot_id').read_text().strip()
+            device=pathlib.Path('/dev/patroni-watchdog');s=device.stat()
+            assert stat.S_ISCHR(s.st_mode) and s.st_uid==19999 and s.st_gid==19999
+            matches=[p.parent for p in pathlib.Path('/sys/class/watchdog').glob('*/dev') if p.read_text().strip()==f'{os.major(s.st_rdev)}:{os.minor(s.st_rdev)}']
+            assert len(matches)==1 and (matches[0]/'identity').read_text().strip()=='Software Watchdog'
+            assert int((matches[0]/'timeout').read_text())==30
+      changed_when: false
+      when: postgres_fencing_mode == 'watchdog'
+
+    - name: Request only the approved stage through the existing Flux source
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/python3
+          - -c
+          - "{{ lookup('ansible.builtin.file', 'files/postgres/activate.py') }}"
+        stdin: "{{ {'enabled': true, 'image_smoke_verified': postgres_image_smoke_verified | bool, 'cluster_uid': postgres_cluster_uid, 'image': postgres_image, 'mode': postgres_fencing_mode, 'stage': postgres_stage, 'host_reset_approved': postgres_host_reset_approved | default(false) | bool, 'manual_fencing_policy_approved': postgres_manual_fencing_policy_approved | default(false) | bool, 'bootstrap_primary_verified': postgres_bootstrap_primary_verified | default(false) | bool, 'pod_cidr': postgres_pod_cidr, 'service_cidr': postgres_service_cidr, 'vpn_cidr': postgres_vpn_cidr} | to_json }}"
+      delegate_to: msk
+      run_once: true
+      no_log: true

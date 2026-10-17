@@ -1,0 +1,121 @@
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: unified-postgres-local
+provisioner: kubernetes.io/no-provisioner
+volumeBindingMode: WaitForFirstConsumer
+reclaimPolicy: Retain
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: unified-pg-msk
+spec:
+  capacity:
+    storage: 24Gi
+  volumeMode: Filesystem
+  accessModes:
+  - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: unified-postgres-local
+  local:
+    path: /var/lib/infra-postgres/unified
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: kubernetes.io/hostname
+          operator: In
+          values:
+          - msk
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: unified-pg-msk
+  namespace: database
+spec:
+  accessModes:
+  - ReadWriteOnce
+  volumeMode: Filesystem
+  storageClassName: unified-postgres-local
+  volumeName: unified-pg-msk
+  resources:
+    requests:
+      storage: 24Gi
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: unified-pg-fin
+spec:
+  capacity:
+    storage: 24Gi
+  volumeMode: Filesystem
+  accessModes:
+  - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: unified-postgres-local
+  local:
+    path: /var/lib/infra-postgres/unified
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: kubernetes.io/hostname
+          operator: In
+          values:
+          - fin
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: unified-pg-fin
+  namespace: database
+spec:
+  accessModes:
+  - ReadWriteOnce
+  volumeMode: Filesystem
+  storageClassName: unified-postgres-local
+  volumeName: unified-pg-fin
+  resources:
+    requests:
+      storage: 24Gi
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: unified-pg-home
+spec:
+  capacity:
+    storage: 24Gi
+  volumeMode: Filesystem
+  accessModes:
+  - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: unified-postgres-local
+  local:
+    path: /var/lib/infra-postgres/unified
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: kubernetes.io/hostname
+          operator: In
+          values:
+          - home
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: unified-pg-home
+  namespace: database
+spec:
+  accessModes:
+  - ReadWriteOnce
+  volumeMode: Filesystem
+  storageClassName: unified-postgres-local
+  volumeName: unified-pg-home
+  resources:
+    requests:
+      storage: 24Gi

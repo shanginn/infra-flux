@@ -1,0 +1,91 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+- ../base
+patches:
+- target:
+    kind: Namespace
+    name: database
+  patch: |
+    - op: replace
+      path: /metadata/labels/pod-security.kubernetes.io~1enforce
+      value: privileged
+- target:
+    kind: StatefulSet
+    name: unified-pg-msk
+  patch: |
+    - op: replace
+      path: /spec/template/spec/containers/0/env/4/value
+      value: watchdog
+    - op: replace
+      path: /spec/template/spec/containers/0/securityContext
+      value:
+        privileged: true
+        runAsUser: 19999
+        runAsGroup: 19999
+        readOnlyRootFilesystem: true
+    - op: add
+      path: /spec/template/spec/volumes/-
+      value:
+        name: watchdog
+        hostPath:
+          path: /dev/patroni-watchdog
+          type: CharDevice
+    - op: add
+      path: /spec/template/spec/containers/0/volumeMounts/-
+      value:
+        name: watchdog
+        mountPath: /dev/patroni-watchdog
+- target:
+    kind: StatefulSet
+    name: unified-pg-fin
+  patch: |
+    - op: replace
+      path: /spec/template/spec/containers/0/env/4/value
+      value: watchdog
+    - op: replace
+      path: /spec/template/spec/containers/0/securityContext
+      value:
+        privileged: true
+        runAsUser: 19999
+        runAsGroup: 19999
+        readOnlyRootFilesystem: true
+    - op: add
+      path: /spec/template/spec/volumes/-
+      value:
+        name: watchdog
+        hostPath:
+          path: /dev/patroni-watchdog
+          type: CharDevice
+    - op: add
+      path: /spec/template/spec/containers/0/volumeMounts/-
+      value:
+        name: watchdog
+        mountPath: /dev/patroni-watchdog
+- target:
+    kind: StatefulSet
+    name: unified-pg-home
+  patch: |
+    - op: replace
+      path: /spec/template/spec/containers/0/env/4/value
+      value: watchdog
+    - op: replace
+      path: /spec/template/spec/containers/0/securityContext
+      value:
+        privileged: true
+        runAsUser: 19999
+        runAsGroup: 19999
+        readOnlyRootFilesystem: true
+    - op: add
+      path: /spec/template/spec/volumes/-
+      value:
+        name: watchdog
+        hostPath:
+          path: /dev/patroni-watchdog
+          type: CharDevice
+    - op: add
+      path: /spec/template/spec/containers/0/volumeMounts/-
+      value:
+        name: watchdog
+        mountPath: /dev/patroni-watchdog
+- path: configmap.yaml

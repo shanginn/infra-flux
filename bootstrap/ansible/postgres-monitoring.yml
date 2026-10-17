@@ -1,0 +1,106 @@
+---
+- name: Enable bounded read-only PostgreSQL metrics after database activation
+  hosts: unified
+  become: true
+  gather_facts: false
+  any_errors_fatal: true
+  vars:
+    postgres_monitoring_enabled: false
+  tasks:
+    - name: Leave monitoring unchanged unless explicitly enabled
+      ansible.builtin.meta: end_play
+      when: not postgres_monitoring_enabled | bool
+
+    - name: Require a prepared complete topology and cluster identity
+      ansible.builtin.assert:
+        that:
+          - not ansible_check_mode
+          - ansible_play_hosts_all | sort == ['fin', 'home', 'msk']
+          - postgres_cluster_uid is defined
+
+    - name: Verify owned host state before installing the read-only producer
+      ansible.builtin.command:
+        argv:
+          - python3
+          - -c
+          - |
+            import json,pathlib,sys
+            p=pathlib.Path('/etc/infra-postgres/ownership.json')
+            o=json.loads(p.read_text())
+            assert o['managed_by']=='infra-flux/ansible/postgres'
+            assert o['node']==sys.argv[1] and o['cluster_uid']==sys.argv[2]
+            assert o['storage_bytes']==25769803776
+            for name in ('infra-postgres-metrics.service','infra-postgres-metrics.timer'):
+              u=pathlib.Path('/etc/systemd/system')/name
+              assert not u.exists() or '# Managed by infra-flux postgres metrics' in u.read_text()
+          - "{{ inventory_hostname }}"
+          - "{{ postgres_cluster_uid }}"
+      changed_when: false
+
+    - name: Ensure the shared read-only metrics output directory exists
+      ansible.builtin.file:
+        path: /var/lib/node_exporter/textfile_collector
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: Install the bounded read-only producer in the owned directory
+      ansible.builtin.copy:
+        src: files/postgres/metrics.py
+        dest: /etc/infra-postgres/metrics.py
+        owner: root
+        group: root
+        mode: '0700'
+
+    - name: Bind read-only collection to the approved node and cluster
+      ansible.builtin.copy:
+        dest: /etc/infra-postgres/metrics.json
+        content: "{{ {'managed_by': 'infra-flux/ansible/postgres', 'node': inventory_hostname, 'cluster_uid': postgres_cluster_uid} | to_nice_json }}\n"
+        owner: root
+        group: root
+        mode: '0600'
+
+    - name: Install the read-only metrics service
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/infra-postgres-metrics.service
+        mode: '0644'
+        content: |
+          # Managed by infra-flux postgres metrics
+          [Unit]
+          Description=Read-only PostgreSQL storage and replication metrics
+          After=network-online.target kubelet.service
+          [Service]
+          Type=oneshot
+          ExecStart=/usr/bin/python3 /etc/infra-postgres/metrics.py
+          TimeoutStartSec=70
+          Nice=10
+          CPUQuota=20%
+          MemoryMax=192M
+          NoNewPrivileges=yes
+          PrivateTmp=yes
+          ProtectHome=yes
+          ProtectSystem=strict
+          ReadWritePaths=/var/lib/node_exporter/textfile_collector
+
+    - name: Schedule bounded metrics collection every two minutes
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/infra-postgres-metrics.timer
+        mode: '0644'
+        content: |
+          # Managed by infra-flux postgres metrics
+          [Unit]
+          Description=Collect PostgreSQL metrics every two minutes
+          [Timer]
+          OnBootSec=90s
+          OnUnitActiveSec=120s
+          RandomizedDelaySec=10s
+          [Install]
+          WantedBy=timers.target
+
+    - name: Start only the explicitly requested read-only schedule
+      ansible.builtin.systemd_service:
+        name: infra-postgres-metrics.timer
+        enabled: true
+        state: started
+        daemon_reload: true

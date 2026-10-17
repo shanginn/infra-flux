@@ -1,0 +1,42 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: unified-postgres
+  namespace: database
+spec:
+  ports:
+  - name: postgresql
+    port: 5432
+    targetPort: 5432
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: unified-postgres-members
+  namespace: database
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: true
+  selector:
+    app.kubernetes.io/name: patroni
+    cluster-name: unified-postgres
+  ports:
+  - name: postgresql
+    port: 5432
+  - name: patroni
+    port: 8008
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: unified-postgres-replicas
+  namespace: database
+spec:
+  selector:
+    app.kubernetes.io/name: patroni
+    cluster-name: unified-postgres
+    role: replica
+  ports:
+  - name: postgresql
+    port: 5432
+    targetPort: 5432

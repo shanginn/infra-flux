@@ -24,4 +24,4 @@
           - "{{ lookup('ansible.builtin.file', 'files/postgres/priority.py') }}"
         stdin: "{{ {'enabled': true, 'cluster_uid': postgres_cluster_uid} | to_json }}"
       register: postgres_priority_result
-      changed_when: (postgres_priority_result.stdout | from_json).changed
+      changed_when: postgres_priority_result.rc == 0 and (postgres_priority_result.stdout | from_json).changed

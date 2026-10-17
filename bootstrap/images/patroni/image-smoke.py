@@ -53,9 +53,12 @@ def main():
         config = copy.deepcopy(template)
         config.update(name='image-smoke', scope='image-smoke')
         config['watchdog'] = {'mode': 'off'}
-        config['kubernetes'].update(namespace='image-smoke', pod_ip='127.0.0.1')
-        config['restapi'].update(listen='127.0.0.1:58008', connect_address='127.0.0.1:58008')
-        config['postgresql'].update(listen='127.0.0.1:55432', connect_address='127.0.0.1:55432', data_dir=str(data), pgpass=str(root / 'pgpass'))
+        # Advertised addresses must be non-loopback for Patroni validation.
+        # TEST-NET is used only in this unstarted config; actual SQL tests below
+        # stay on loopback inside the network-less container.
+        config['kubernetes'].update(namespace='image-smoke', pod_ip='192.0.2.10')
+        config['restapi'].update(listen='127.0.0.1:58008', connect_address='192.0.2.10:58008')
+        config['postgresql'].update(listen='127.0.0.1:55432', connect_address='192.0.2.10:55432', data_dir=str(data), pgpass=str(root / 'pgpass'))
         config['postgresql']['parameters']['unix_socket_directories'] = str(sock1)
         for role, user in [('superuser', 'postgres'), ('replication', 'replicator'), ('rewind', 'rewind_user')]:
             config['postgresql']['authentication'][role].update(username=user, password=password)

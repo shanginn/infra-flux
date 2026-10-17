@@ -3,6 +3,7 @@
 import hashlib
 import importlib.util
 import json
+import os
 import pathlib
 import stat
 import tempfile
@@ -42,6 +43,7 @@ class Guards(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError,text): v.prepare(UID)
         self.assertTrue(all(c[0]=='kubectl' for c in self.calls))
     def record(self, **updates):
+        v.ROOT.mkdir(mode=0o711, exist_ok=True); v.ROOT.chmod(0o711)
         d={'owner':v.OWNER,'phase':'ready','image':str(v.IMAGE),'mount':str(v.MOUNT),'bytes':v.BYTES,
            'machine_sha256':hashlib.sha256(v.MACHINE.read_bytes()).hexdigest(),'cluster_uid':UID,
            'ca_sha256':self.marker['ca_sha256'],'filesystem_uuid':UID,'image_identity':{'device':1,'inode':2}}
@@ -80,13 +82,16 @@ class Guards(unittest.TestCase):
         with patch.object(v,'image_shape',return_value={'device':1,'inode':2}),patch.object(v,'verify'),patch.object(v,'check_enabled',side_effect=RuntimeError('not enabled')):
             self.assert_readonly_failure('not enabled')
     def test_mount_cannot_be_root_filesystem(self):
+        v.ROOT.mkdir(); v.MOUNT.mkdir(mode=0o700)
         self.calls.clear()
-        with patch.object(v,'command',return_value=json.dumps({'filesystems':[{'target':str(v.MOUNT),'source':'/dev/sda1','fstype':'ext4','options':'rw,nodev,nosuid,noexec'}]})):
+        with patch.object(v,'mount_directory'), patch.object(v,'command',return_value=json.dumps({'filesystems':[{'target':str(v.MOUNT),'source':'/dev/sda1','fstype':'ext4','options':'rw,nodev,nosuid,noexec'}]})):
             with self.assertRaisesRegex(RuntimeError,'loop device'): v.check_mount({'filesystem_uuid':UID})
     def test_mount_missing_restriction(self):
-        with patch.object(v,'command',return_value=json.dumps({'filesystems':[{'target':str(v.MOUNT),'source':'/dev/loop0','fstype':'ext4','options':'rw'}]})):
+        v.ROOT.mkdir(); v.MOUNT.mkdir(mode=0o700)
+        with patch.object(v,'mount_directory'), patch.object(v,'command',return_value=json.dumps({'filesystems':[{'target':str(v.MOUNT),'source':'/dev/loop0','fstype':'ext4','options':'rw'}]})):
             with self.assertRaisesRegex(RuntimeError,'mount shape'): v.check_mount({'filesystem_uuid':UID})
     def test_unit_drift_rejected(self):
+        v.ROOT.mkdir(mode=0o711); v.ROOT.chmod(0o711)
         v.UNIT.write_text('modified'); v.GUARD.write_text(v.guard_unit())
         with self.assertRaisesRegex(RuntimeError,'unit changed'): v.verify({})
     def test_failed_mount_never_creates_root_data_directory(self):
@@ -126,5 +131,68 @@ class Guards(unittest.TestCase):
         self.assertEqual(len(mkfs),1)
         self.assertIn('nodiscard',[n.value for n in mkfs[0] if isinstance(n,ast.Constant)])
         self.assertEqual(ast.unparse(mkfs[0][-1]),'str(IMAGE)')
+
+    def configure_upgrade(self):
+        self.record(); v.ROOT.chmod(0o700); v.MOUNT.mkdir(mode=0o755); v.MOUNT.chmod(0o755)
+        script=(self.p/'installed.py').resolve(); script.write_bytes(b'owned reviewed helper fixture')
+        for key,value in [('SCRIPT',script),('__file__',str(script))]:
+            p=patch.object(v,key,value);p.start();self.addCleanup(p.stop)
+        for key in ['verify','check_enabled']:
+            p=patch.object(v,key);p.start();self.addCleanup(p.stop)
+        p=patch.object(v,'image_shape',return_value={'device':1,'inode':2});p.start();self.addCleanup(p.stop)
+        original_fstat=os.fstat
+        def root_fstat(fd):
+            item=original_fstat(fd)
+            return types.SimpleNamespace(st_dev=item.st_dev,st_ino=item.st_ino,st_mode=item.st_mode,st_uid=0,st_gid=0)
+        p=patch.object(v.os,'fstat',side_effect=root_fstat);p.start();self.addCleanup(p.stop)
+        root=v.ROOT.stat();mount=v.MOUNT.stat()
+        return [UID,hashlib.sha256(script.read_bytes()).hexdigest(),root.st_dev,root.st_ino,mount.st_dev,mount.st_ino]
+    def test_upgrade_exact_owned_directories_only_and_idempotent(self):
+        args=self.configure_upgrade()
+        self.assertTrue(v.enable_metrics_traversal(*args))
+        self.assertEqual(stat.S_IMODE(v.ROOT.stat().st_mode),0o711)
+        self.assertEqual(stat.S_IMODE(v.MOUNT.stat().st_mode),0o700)
+        self.assertFalse(v.enable_metrics_traversal(*args))
+        self.assertTrue(all(c[0]=='kubectl' for c in self.calls))
+    def test_upgrade_source_hash_drift_rejected_before_chmod(self):
+        args=self.configure_upgrade();args[1]='0'*64
+        with self.assertRaisesRegex(RuntimeError,'source differs'):v.enable_metrics_traversal(*args)
+        self.assertEqual(stat.S_IMODE(v.ROOT.stat().st_mode),0o700)
+        self.assertEqual(stat.S_IMODE(v.MOUNT.stat().st_mode),0o755)
+    def test_upgrade_second_directory_inode_drift_rejects_before_any_chmod(self):
+        args=self.configure_upgrade();args[5]+=1
+        with self.assertRaisesRegex(RuntimeError,'identity changed'):v.enable_metrics_traversal(*args)
+        self.assertEqual(stat.S_IMODE(v.ROOT.stat().st_mode),0o700)
+        self.assertEqual(stat.S_IMODE(v.MOUNT.stat().st_mode),0o755)
+    def test_upgrade_foreign_directory_owner_rejected(self):
+        args=self.configure_upgrade(); original_fstat=os.stat(v.ROOT)
+        fake=types.SimpleNamespace(st_dev=original_fstat.st_dev,st_ino=original_fstat.st_ino,st_mode=original_fstat.st_mode,st_uid=123,st_gid=0)
+        with patch.object(v.os,'fstat',return_value=fake):
+            with self.assertRaisesRegex(RuntimeError,'owner or mode'):v.enable_metrics_traversal(*args)
+        self.assertEqual(stat.S_IMODE(v.ROOT.stat().st_mode),0o700)
+    def test_upgrade_unexpected_mount_mode_rejected_before_any_chmod(self):
+        args=self.configure_upgrade();v.MOUNT.chmod(0o777)
+        with self.assertRaisesRegex(RuntimeError,'owner or mode'):v.enable_metrics_traversal(*args)
+        self.assertEqual(stat.S_IMODE(v.ROOT.stat().st_mode),0o700)
+    def test_upgrade_cluster_mismatch_rejected(self):
+        args=self.configure_upgrade();args[0]='22222222-2222-4222-8222-222222222222'
+        with self.assertRaisesRegex(RuntimeError,'Live cluster UID'):v.enable_metrics_traversal(*args)
+        self.assertEqual(stat.S_IMODE(v.ROOT.stat().st_mode),0o700)
+    def test_normal_load_rejects_legacy_parent(self):
+        self.record();v.ROOT.chmod(0o700)
+        with self.assertRaisesRegex(RuntimeError,'traverse-only'):v.load_record()
+    def test_root_mode_drift_rejected_even_in_explicit_upgrade(self):
+        self.record();v.ROOT.chmod(0o755)
+        with self.assertRaisesRegex(RuntimeError,'traverse-only'):v.load_record(allow_legacy_permissions=True)
+    def test_mount_mode_requires_private_or_explicit_legacy(self):
+        v.ROOT.mkdir();v.MOUNT.mkdir(mode=0o755)
+        item=types.SimpleNamespace(st_mode=stat.S_IFDIR|0o755,st_uid=0,st_gid=0)
+        with patch.object(pathlib.Path,'lstat',return_value=item):
+            with self.assertRaisesRegex(RuntimeError,'private 0700'):v.mount_directory()
+            v.mount_directory(allow_legacy_mode=True)
+    def test_upgrade_refuses_symlink_directory(self):
+        args=self.configure_upgrade();v.MOUNT.rmdir();v.MOUNT.symlink_to(v.ROOT)
+        with self.assertRaises(OSError):v.enable_metrics_traversal(*args)
+        self.assertEqual(stat.S_IMODE(v.ROOT.stat().st_mode),0o700)
 
 if __name__=='__main__': unittest.main()

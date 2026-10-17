@@ -44,7 +44,7 @@ ingester:
 limits_config:
   retention_period: 48h
   ingestion_rate_strategy: local
-  ingestion_rate_mb: 0.01
+  ingestion_rate_mb: 0.01953125
   ingestion_burst_size_mb: 1
   max_line_size: 8KB
   max_line_size_truncate: false
@@ -54,7 +54,7 @@ limits_config:
   max_streams_per_user: 500
   max_global_streams_per_user: 500
   per_stream_rate_limit: 8KB
-  per_stream_rate_limit_burst: 64KB
+  per_stream_rate_limit_burst: 256KB
   max_query_lookback: 48h
   max_query_length: 48h
   max_query_parallelism: 2

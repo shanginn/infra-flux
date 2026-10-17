@@ -1,6 +1,6 @@
 $TTL 24H
 @     IN  SOA @       hostmaster.shanginn.io. (
-  2026101701       ; serial
+  2026101702       ; serial
   3H      ; refresh
   1H      ; retry
   1W      ; expire
@@ -22,6 +22,10 @@ qr         300 IN  A       185.221.212.224
 vpn        300 IN  A       89.35.119.225
 derp-msk   300 IN  A       157.228.139.163
 derp-fin   300 IN  A       89.35.119.225
+apps       300 IN  NS      ns-msk.apps.shanginn.io.
+apps       300 IN  NS      ns-fin.apps.shanginn.io.
+ns-msk.apps 300 IN A       157.228.139.163
+ns-fin.apps 300 IN A       89.35.119.225
 *          IN  A           84.247.177.201
 
 @                  IN  MX  10      mail.shanginn.io.

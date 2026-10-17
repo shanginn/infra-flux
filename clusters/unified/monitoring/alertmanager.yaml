@@ -1,0 +1,73 @@
+apiVersion: v1
+kind: Service
+metadata: {name: alertmanager}
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: true
+  selector: {app: alertmanager}
+  ports:
+    - {name: http, port: 9093, targetPort: http}
+    - {name: mesh-tcp, port: 9094, targetPort: mesh-tcp}
+    - {name: mesh-udp, port: 9094, targetPort: mesh-udp, protocol: UDP}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata: {name: alertmanager}
+spec:
+  serviceName: alertmanager
+  replicas: 2
+  podManagementPolicy: Parallel
+  selector: {matchLabels: {app: alertmanager}}
+  template:
+    metadata:
+      labels: {app: alertmanager}
+    spec:
+      automountServiceAccountToken: false
+      securityContext: {runAsNonRoot: true, runAsUser: 65534, runAsGroup: 65534, fsGroup: 65534, seccompProfile: {type: RuntimeDefault}}
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - {key: infra.shanginn.io/site, operator: In, values: [msk, fin]}
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector: {matchLabels: {app: alertmanager}}
+              topologyKey: kubernetes.io/hostname
+      containers:
+        - name: alertmanager
+          image: quay.io/prometheus/alertmanager:v0.34.1@sha256:e9733bafb1bdef9b00e25a21f8f99dc26a22224bf16641ad754d1649f4c3357a
+          args:
+            - --config.file=/etc/alertmanager/alertmanager.yml
+            - --storage.path=/alertmanager
+            - --data.retention=24h
+            - --cluster.listen-address=0.0.0.0:9094
+            - --cluster.advertise-address=$(POD_IP):9094
+            - --cluster.peer=alertmanager-0.alertmanager.monitoring.svc.cluster.local:9094
+            - --cluster.peer=alertmanager-1.alertmanager.monitoring.svc.cluster.local:9094
+          env:
+            - name: POD_IP
+              valueFrom: {fieldRef: {fieldPath: status.podIP}}
+          ports:
+            - {name: http, containerPort: 9093}
+            - {name: mesh-tcp, containerPort: 9094}
+            - {name: mesh-udp, containerPort: 9094, protocol: UDP}
+          resources:
+            requests: {cpu: 25m, memory: 64Mi}
+            limits: {cpu: 200m, memory: 128Mi}
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+          readinessProbe: {httpGet: {path: /-/ready, port: http}, periodSeconds: 10}
+          livenessProbe: {httpGet: {path: /-/healthy, port: http}, periodSeconds: 30}
+          volumeMounts:
+            - {name: config, mountPath: /etc/alertmanager, readOnly: true}
+            - {name: data, mountPath: /alertmanager}
+      volumes:
+        - {name: config, configMap: {name: alertmanager-config}}
+        - {name: data, emptyDir: {sizeLimit: 64Mi}}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: {name: alertmanager}
+spec:
+  minAvailable: 1
+  selector: {matchLabels: {app: alertmanager}}

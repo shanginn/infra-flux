@@ -1,0 +1,119 @@
+---
+- name: Bootstrap Flux only into the owned unified cluster
+  hosts: msk
+  become: true
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - name: Require explicit private network settings and deployment selection
+      ansible.builtin.assert:
+        that:
+          - unified_gitops_enabled | default(false) | bool
+          - not ansible_check_mode
+          - unified_pod_cidr is defined
+          - unified_service_cidr is defined
+          - overlay_tailnet_prefix is defined
+
+    - name: Check cluster ownership, all three Ready nodes and actual networks
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/python3
+          - -c
+          - |
+            import hashlib,ipaddress,json,pathlib,subprocess,sys,yaml
+            pod,svc,vpn=sys.argv[1:]
+            marker=json.loads(pathlib.Path('/etc/infra-flux/kubeadm-state.json').read_text())
+            assert marker['managed_by']=='infra-flux/ansible/kubeadm' and marker['cluster_name']=='unified'
+            assert hashlib.sha256(pathlib.Path('/etc/kubernetes/pki/ca.crt').read_bytes()).hexdigest()==marker['ca_sha256']
+            config=next(x for x in yaml.safe_load_all(pathlib.Path('/etc/infra-flux/kubeadm/init.yaml').read_text()) if x['kind']=='ClusterConfiguration')
+            assert config['networking']['podSubnet']==pod and config['networking']['serviceSubnet']==svc
+            prefix=ipaddress.ip_network(vpn)
+            kube=['kubectl','--kubeconfig=/etc/kubernetes/admin.conf','--request-timeout=20s']
+            def get(*args):return json.loads(subprocess.check_output(kube+list(args)+['-o','json']))
+            nodes=get('get','nodes')['items']
+            assert {n['metadata']['name'] for n in nodes}=={'home','msk','fin'}
+            for node in nodes:
+                assert any(c['type']=='Ready' and c['status']=='True' for c in node['status']['conditions'])
+                assert all(ipaddress.ip_address(a['address']) in prefix for a in node['status']['addresses'] if a['type']=='InternalIP')
+            uid=get('get','namespace','kube-system')['metadata']['uid']
+            state=pathlib.Path('/etc/infra-flux/gitops.json')
+            if state.exists():assert json.loads(state.read_text())=={'owner':'infra-flux/ansible/gitops','cluster_uid':uid}
+            else:
+                ns=subprocess.check_output(kube+['get','namespace','flux-system','--ignore-not-found','-o','name'],text=True)
+                assert not ns.strip(), 'Refuse an existing unowned Flux installation'
+            print(uid)
+          - "{{ unified_pod_cidr }}"
+          - "{{ unified_service_cidr }}"
+          - "{{ overlay_tailnet_prefix }}"
+      register: unified_gitops_identity
+      changed_when: false
+
+    - name: Record only the verified destination identity
+      ansible.builtin.copy:
+        dest: /etc/infra-flux/gitops.json
+        mode: '0600'
+        content: "{{ {'owner': 'infra-flux/ansible/gitops', 'cluster_uid': unified_gitops_identity.stdout | trim} | to_nice_json }}\n"
+
+    - name: Render the pinned and reviewed Flux installation on the controller
+      ansible.builtin.command:
+        argv: [kubectl, kustomize, "{{ playbook_dir }}/../../clusters/unified/flux-system"]
+      delegate_to: localhost
+      become: false
+      changed_when: false
+      register: unified_flux_render
+
+    - name: Decode installation objects
+      ansible.builtin.set_fact:
+        unified_flux_objects: "{{ unified_flux_render.stdout | from_yaml_all | list }}"
+
+    - name: Install the pinned CRDs before creating their resources
+      ansible.builtin.command:
+        argv: [kubectl, --kubeconfig=/etc/kubernetes/admin.conf, apply, --server-side, --field-manager=infra-flux-bootstrap, -f, '-']
+        stdin: "{{ {'apiVersion': 'v1', 'kind': 'List', 'items': unified_flux_objects | selectattr('kind', 'equalto', 'CustomResourceDefinition') | list} | to_json }}"
+      changed_when: false
+
+    - name: Wait for Flux APIs to be established
+      ansible.builtin.command:
+        argv: [kubectl, --kubeconfig=/etc/kubernetes/admin.conf, wait, --for=condition=Established, --timeout=60s, "customresourcedefinition/{{ item.metadata.name }}"]
+      loop: "{{ unified_flux_objects | selectattr('kind', 'equalto', 'CustomResourceDefinition') | list }}"
+      loop_control:
+        label: "{{ item.metadata.name }}"
+      changed_when: false
+
+    - name: Install the four controllers and supporting Kubernetes resources
+      ansible.builtin.command:
+        argv: [kubectl, --kubeconfig=/etc/kubernetes/admin.conf, apply, --server-side, --field-manager=infra-flux-bootstrap, -f, '-']
+        stdin: "{{ {'apiVersion': 'v1', 'kind': 'List', 'items': unified_flux_objects | rejectattr('kind', 'in', ['CustomResourceDefinition', 'GitRepository', 'Kustomization']) | list} | to_json }}"
+      changed_when: false
+
+    - name: Create runtime network substitutions without publishing them in Git
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/python3
+          - -c
+          - |
+            import json,subprocess,sys
+            data=dict(zip(('POD_CIDR','SERVICE_CIDR','VPN_CIDR'),sys.argv[1:]))
+            kube=['kubectl','--kubeconfig=/etc/kubernetes/admin.conf']
+            existing=subprocess.check_output(kube+['get','configmap','unified-network','-n','flux-system','--ignore-not-found','-o','json'],text=True)
+            if existing.strip():assert json.loads(existing)['data']==data, 'Network substitutions changed; review reconfiguration first'
+            else:
+                obj={'apiVersion':'v1','kind':'ConfigMap','metadata':{'name':'unified-network','namespace':'flux-system','labels':{'reconcile.fluxcd.io/watch':'Enabled'}},'data':data}
+                subprocess.run(kube+['create','-f','-'],input=json.dumps(obj),text=True,check=True,capture_output=True)
+          - "{{ unified_pod_cidr }}"
+          - "{{ unified_service_cidr }}"
+          - "{{ overlay_tailnet_prefix }}"
+      no_log: true
+      changed_when: false
+
+    - name: Wait for each controller to be available
+      ansible.builtin.command:
+        argv: [kubectl, --kubeconfig=/etc/kubernetes/admin.conf, -n, flux-system, rollout, status, "deployment/{{ item }}", --timeout=240s]
+      loop: [source-controller, kustomize-controller, helm-controller, notification-controller]
+      changed_when: false
+
+    - name: Connect only the unified configuration path to the public Git repository
+      ansible.builtin.command:
+        argv: [kubectl, --kubeconfig=/etc/kubernetes/admin.conf, apply, --server-side, --field-manager=infra-flux-bootstrap, -f, '-']
+        stdin: "{{ {'apiVersion': 'v1', 'kind': 'List', 'items': unified_flux_objects | selectattr('kind', 'in', ['GitRepository', 'Kustomization']) | list} | to_json }}"
+      changed_when: false

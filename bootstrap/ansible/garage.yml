@@ -1,0 +1,212 @@
+---
+- name: Prepare new Garage storage and runtime identity
+  hosts: unified
+  become: true
+  gather_facts: true
+  any_errors_fatal: true
+  vars:
+    garage_prepare_enabled: false
+    garage_owner: infra-flux/ansible/garage
+    garage_marker: /etc/infra-flux/garage.json
+    garage_secret_file: /etc/infra-garage/secrets.json
+  tasks:
+    - name: Skip prerequisites unless explicitly selected
+      ansible.builtin.meta: end_play
+      when: not garage_prepare_enabled | bool
+
+    - name: Require the complete existing topology
+      ansible.builtin.assert:
+        that:
+          - not ansible_check_mode
+          - ansible_play_hosts_all | sort == ['fin', 'home', 'msk']
+          - ansible_facts.distribution == 'Debian'
+          - ansible_facts.distribution_major_version == '13'
+
+    - name: Inspect ownership and storage without adopting old data
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop:
+        - "{{ garage_marker }}"
+        - /var/lib/infra-garage
+        - "{{ garage_secret_file }}"
+      register: garage_paths
+
+    - name: Read existing ownership marker
+      ansible.builtin.slurp:
+        src: "{{ garage_marker }}"
+      when: garage_paths.results[0].stat.exists
+      register: garage_existing_marker
+
+    - name: Verify ownership and protect the existing cluster identity
+      ansible.builtin.assert:
+        that:
+          - not (garage_paths.results[1].stat.islnk | default(false))
+          - not (garage_paths.results[2].stat.islnk | default(false))
+          - >-
+            (not garage_paths.results[0].stat.exists and not garage_paths.results[1].stat.exists and not garage_paths.results[2].stat.exists) or
+            (garage_paths.results[0].stat.exists and
+             (garage_existing_marker.content | b64decode | from_json).managed_by == garage_owner and
+             (garage_existing_marker.content | b64decode | from_json).node == inventory_hostname)
+          - >-
+            not garage_paths.results[2].stat.exists or
+            (hostvars['msk'].garage_paths.results[2].stat.exists and
+             garage_paths.results[2].stat.checksum == hostvars['msk'].garage_paths.results[2].stat.checksum)
+        fail_msg: Unowned storage, changed node, missing authoritative secrets or inconsistent RPC identity. Recover explicitly; never regenerate a populated cluster.
+      no_log: true
+
+    - name: Guard root reserve and absence of data without an identity
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/python3
+          - -c
+          - |
+            import os,sys
+            from pathlib import Path
+            root=Path('/var/lib/infra-garage')
+            v=os.statvfs('/var/lib')
+            required=20*1024**3+(31*1024**3 if sys.argv[1]=='new' else 0)
+            assert v.f_bavail*v.f_frsize >= required, 'Need 31 GiB PV budget plus 20 GiB root reserve'
+            assert v.f_favail >= 100000
+            if not Path('/etc/infra-garage/secrets.json').exists() and root.exists():
+                assert not any(files for _,_,files in os.walk(root)), 'Restore original RPC identity before touching existing data'
+          - "{{ 'owned' if garage_paths.results[0].stat.exists else 'new' }}"
+      changed_when: false
+
+    - name: Create managed configuration directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: root
+        group: root
+        mode: '0700'
+      loop: [/etc/infra-garage]
+
+    - name: Ensure marker parent exists
+      ansible.builtin.file:
+        path: /etc/infra-flux
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: Record owned preparation for safe retry
+      ansible.builtin.copy:
+        dest: "{{ garage_marker }}"
+        content: "{{ {'managed_by': garage_owner, 'node': inventory_hostname, 'data_capacity_bytes': 32212254720, 'metadata_capacity_bytes': 1073741824, 'bucket_budget_bytes': 25769803776} | to_nice_json }}\n"
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Create local PV directories on each independent server without formatting
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: '1000'
+        group: '1000'
+        mode: '0750'
+      loop: [/var/lib/infra-garage, /var/lib/infra-garage/data, /var/lib/infra-garage/meta]
+
+    - name: Generate one runtime identity on Moscow only
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/python3
+          - -c
+          - |
+            import json,os,secrets,sys
+            path=sys.argv[1]
+            fd=os.open(path,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
+            with os.fdopen(fd,'w') as f:json.dump({k:secrets.token_hex(32) for k in ('rpcSecret','adminToken')},f)
+          - "{{ garage_secret_file }}"
+        creates: "{{ garage_secret_file }}"
+      delegate_to: msk
+      run_once: true
+      no_log: true
+
+    - name: Read shared identity without logging it
+      ansible.builtin.slurp:
+        src: "{{ garage_secret_file }}"
+      delegate_to: msk
+      run_once: true
+      register: garage_shared_secret
+      no_log: true
+
+    - name: Keep a protected recovery copy on all nodes
+      ansible.builtin.copy:
+        dest: "{{ garage_secret_file }}"
+        content: "{{ garage_shared_secret.content | b64decode }}"
+        owner: root
+        group: root
+        mode: '0600'
+      no_log: true
+      diff: false
+
+    - name: Create the runtime Secret without placing values in Git or command arguments
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/python3
+          - -c
+          - |
+            import base64,json,subprocess
+            from pathlib import Path
+            kube=['kubectl','--kubeconfig=/etc/kubernetes/admin.conf']
+            secrets=json.loads(Path('/etc/infra-garage/secrets.json').read_text())
+            def call(args,payload=None):
+                return subprocess.run(kube+args,input=payload,text=True,capture_output=True,check=True).stdout
+            ns=call(['get','namespace','garage','--ignore-not-found','-o','json'])
+            if not ns.strip():call(['create','namespace','garage'])
+            desired={k:base64.b64encode(v.encode()).decode() for k,v in secrets.items()}
+            existing=call(['get','secret','garage-runtime','-n','garage','--ignore-not-found','-o','json'])
+            if existing.strip():
+                current=json.loads(existing)
+                assert current['metadata'].get('annotations',{}).get('infra.shanginn.io/managed-by')=='infra-flux/ansible/garage'
+                assert current['data']==desired, 'Runtime identity differs; do not rotate automatically'
+            else:
+                body={'apiVersion':'v1','kind':'Secret','metadata':{'name':'garage-runtime','namespace':'garage','annotations':{'infra.shanginn.io/managed-by':'infra-flux/ansible/garage'}},'type':'Opaque','data':desired}
+                call(['create','-f','-'],json.dumps(body))
+      delegate_to: msk
+      run_once: true
+      no_log: true
+      changed_when: false
+
+- name: Initialize and verify one three-zone Garage layout
+  hosts: msk
+  become: true
+  gather_facts: false
+  vars:
+    garage_initialize_enabled: false
+    # Add declared non-versioned buckets only; aggregate quotas must remain <=24 GiB.
+    garage_buckets: []
+  tasks:
+    - name: Skip initialization unless explicitly selected after Pods are running
+      ansible.builtin.meta: end_play
+      when: not garage_initialize_enabled | bool
+
+    - name: Require live execution for initialization
+      ansible.builtin.assert:
+        that: [not ansible_check_mode]
+
+    - name: Install the bounded initializer
+      ansible.builtin.copy:
+        src: files/garage-initialize.py
+        dest: /etc/infra-garage/initialize.py
+        owner: root
+        group: root
+        mode: '0700'
+
+    - name: Save declared bucket budgets without credentials
+      ansible.builtin.copy:
+        dest: /etc/infra-garage/buckets.json
+        content: "{{ garage_buckets | to_nice_json }}\n"
+        owner: root
+        group: root
+        mode: '0600'
+
+    - name: Initialize once and verify node identities, layout zones, health and quotas
+      ansible.builtin.command:
+        argv: [/usr/bin/python3, /etc/infra-garage/initialize.py, --buckets-file, /etc/infra-garage/buckets.json]
+      register: garage_initialization
+      changed_when: false
+
+    - name: Report bounded initialization outcome without credentials
+      ansible.builtin.debug:
+        var: garage_initialization.stdout_lines

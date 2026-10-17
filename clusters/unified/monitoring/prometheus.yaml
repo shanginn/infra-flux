@@ -1,0 +1,77 @@
+apiVersion: v1
+kind: Service
+metadata: {name: prometheus}
+spec:
+  clusterIP: None
+  selector: {app: prometheus}
+  ports: [{name: http, port: 9090, targetPort: http}]
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata: {name: prometheus}
+spec:
+  serviceName: prometheus
+  replicas: 2
+  podManagementPolicy: Parallel
+  persistentVolumeClaimRetentionPolicy: {whenDeleted: Retain, whenScaled: Retain}
+  selector:
+    matchLabels: {app: prometheus}
+  template:
+    metadata:
+      labels: {app: prometheus}
+    spec:
+      serviceAccountName: prometheus
+      securityContext: {runAsNonRoot: true, runAsUser: 65534, runAsGroup: 65534, fsGroup: 65534, fsGroupChangePolicy: OnRootMismatch, seccompProfile: {type: RuntimeDefault}}
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - {key: infra.shanginn.io/site, operator: In, values: [msk, fin]}
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector: {matchLabels: {app: prometheus}}
+              topologyKey: kubernetes.io/hostname
+      containers:
+        - name: prometheus
+          image: quay.io/prometheus/prometheus:v3.15.0@sha256:efd719c99d83b060d9daefdcf00360461adf279f45ef5391f8d111892118753e
+          args:
+            - --config.file=/etc/prometheus/prometheus.yml
+            - --storage.tsdb.path=/prometheus
+            - --storage.tsdb.retention.time=7d
+            - --storage.tsdb.retention.size=1GB
+            - --web.listen-address=0.0.0.0:9090
+            - --web.max-connections=64
+            - --auto-gomemlimit.ratio=0.75
+          env:
+            - name: POD_NAME
+              valueFrom: {fieldRef: {fieldPath: metadata.name}}
+          ports: [{name: http, containerPort: 9090}]
+          resources:
+            requests: {cpu: 200m, memory: 512Mi}
+            limits: {cpu: '1', memory: 1Gi}
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+          startupProbe: {httpGet: {path: /-/ready, port: http}, periodSeconds: 10, failureThreshold: 60}
+          readinessProbe: {httpGet: {path: /-/ready, port: http}, periodSeconds: 10}
+          livenessProbe: {httpGet: {path: /-/healthy, port: http}, periodSeconds: 30}
+          volumeMounts:
+            - {name: config, mountPath: /etc/prometheus, readOnly: true}
+            - {name: data, mountPath: /prometheus}
+      volumes:
+        - name: config
+          configMap: {name: prometheus-config}
+  volumeClaimTemplates:
+    - metadata: {name: data}
+      spec:
+        accessModes: [ReadWriteOnce]
+        storageClassName: unified-monitoring-local
+        selector: {matchLabels: {infra.shanginn.io/storage: prometheus}}
+        resources:
+          requests: {storage: 2Gi}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: {name: prometheus}
+spec:
+  minAvailable: 1
+  selector: {matchLabels: {app: prometheus}}

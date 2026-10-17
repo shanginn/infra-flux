@@ -1,0 +1,43 @@
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: unified-monitoring-local
+provisioner: kubernetes.io/no-provisioner
+volumeBindingMode: WaitForFirstConsumer
+reclaimPolicy: Retain
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: unified-prometheus-msk
+  labels: {infra.shanginn.io/storage: prometheus}
+spec:
+  capacity: {storage: 2Gi}
+  accessModes: [ReadWriteOnce]
+  volumeMode: Filesystem
+  storageClassName: unified-monitoring-local
+  persistentVolumeReclaimPolicy: Retain
+  local: {path: /var/lib/infra-monitoring/prometheus}
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - {key: kubernetes.io/hostname, operator: In, values: [msk]}
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: unified-prometheus-fin
+  labels: {infra.shanginn.io/storage: prometheus}
+spec:
+  capacity: {storage: 2Gi}
+  accessModes: [ReadWriteOnce]
+  volumeMode: Filesystem
+  storageClassName: unified-monitoring-local
+  persistentVolumeReclaimPolicy: Retain
+  local: {path: /var/lib/infra-monitoring/prometheus}
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - {key: kubernetes.io/hostname, operator: In, values: [fin]}

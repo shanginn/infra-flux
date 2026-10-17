@@ -1,0 +1,37 @@
+#!/bin/sh
+set -eu
+# Change only our own chains. Preserve all existing SSH/WireGuard/DERP rules.
+/usr/sbin/iptables-restore --wait 10 --noflush <<'IPV4'
+*filter
+:INFRA-K8S-IN - [0:0]
+-F INFRA-K8S-IN
+-A INFRA-K8S-IN -i lo -j RETURN
+{% for node in groups['unified'] %}
+-A INFRA-K8S-IN -i tailscale0 -s {{ hostvars[node].unified_node_vpn_ip }}/32 -j RETURN
+{% endfor %}
+{% for cidr in unified_admin_vpn_cidrs %}
+-A INFRA-K8S-IN -i tailscale0 -s {{ cidr }} -p tcp --dport 6443 -j RETURN
+{% endfor %}
+-A INFRA-K8S-IN -i cali+ -s {{ unified_pod_cidr }} -p tcp -m multiport --dports 2381,6443,10250 -j RETURN
+-A INFRA-K8S-IN -i vxlan.calico -s {{ unified_pod_cidr }} -p tcp -m multiport --dports 2381,6443,10250 -j RETURN
+-A INFRA-K8S-IN -p tcp -m multiport --dports 2379,2380,2381,6443,7443,10250,10255,10257,10259 -j REJECT --reject-with tcp-reset
+-A INFRA-K8S-IN -p tcp --dport 30000:32767 -j REJECT --reject-with tcp-reset
+-A INFRA-K8S-IN -p udp --dport 30000:32767 -j REJECT --reject-with icmp-port-unreachable
+-A INFRA-K8S-IN -p udp --dport 4789 -j REJECT --reject-with icmp-port-unreachable
+-A INFRA-K8S-IN -j RETURN
+COMMIT
+IPV4
+/usr/sbin/iptables --wait 10 -C INPUT -j INFRA-K8S-IN 2>/dev/null || /usr/sbin/iptables --wait 10 -I INPUT 1 -j INFRA-K8S-IN
+/usr/sbin/ip6tables-restore --wait 10 --noflush <<'IPV6'
+*filter
+:INFRA-K8S-IN - [0:0]
+-F INFRA-K8S-IN
+-A INFRA-K8S-IN -i lo -j RETURN
+-A INFRA-K8S-IN -p tcp -m multiport --dports 2379,2380,2381,6443,7443,10250,10255,10257,10259 -j REJECT --reject-with tcp-reset
+-A INFRA-K8S-IN -p tcp --dport 30000:32767 -j REJECT --reject-with tcp-reset
+-A INFRA-K8S-IN -p udp --dport 30000:32767 -j REJECT --reject-with icmp6-port-unreachable
+-A INFRA-K8S-IN -p udp --dport 4789 -j REJECT --reject-with icmp6-port-unreachable
+-A INFRA-K8S-IN -j RETURN
+COMMIT
+IPV6
+/usr/sbin/ip6tables --wait 10 -C INPUT -j INFRA-K8S-IN 2>/dev/null || /usr/sbin/ip6tables --wait 10 -I INPUT 1 -j INFRA-K8S-IN

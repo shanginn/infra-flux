@@ -1,0 +1,22 @@
+#!/bin/sh
+set -eu
+attempt=0
+while [ "$attempt" -lt 60 ]; do
+  if /usr/bin/python3 - '{{ unified_node_vpn_ip }}' <<'PY'
+import json,subprocess,sys
+try:
+    state=json.loads(subprocess.check_output(['/usr/bin/tailscale','status','--json'],stderr=subprocess.DEVNULL))
+    links=json.loads(subprocess.check_output(['/usr/sbin/ip','-j','-4','address','show','dev','tailscale0'],stderr=subprocess.DEVNULL))
+    valid=state.get('BackendState')=='Running' and any(a.get('local')==sys.argv[1] for link in links for a in link.get('addr_info',[]))
+except (subprocess.CalledProcessError,ValueError):
+    valid=False
+sys.exit(0 if valid else 1)
+PY
+  then
+    exit 0
+  fi
+  attempt=$((attempt + 1))
+  sleep 1
+done
+echo 'Expected Tailscale IPv4 is not present; refusing kubelet startup.' >&2
+exit 1

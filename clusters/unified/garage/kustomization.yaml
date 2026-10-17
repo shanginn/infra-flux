@@ -1,0 +1,11 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: garage
+resources:
+  - namespace.yaml
+  - garagenodes-crd.yaml
+  - source.yaml
+  - release.yaml
+  - storage.yaml
+  - network-policy.yaml
+  - monitoring-rbac.yaml

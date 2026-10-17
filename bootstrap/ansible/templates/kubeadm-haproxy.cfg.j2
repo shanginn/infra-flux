@@ -1,0 +1,39 @@
+global
+  maxconn 2048
+  user haproxy
+  group haproxy
+
+defaults
+  mode tcp
+  timeout connect 5s
+  timeout client 1h
+  timeout server 1h
+  option clitcpka
+  option srvtcpka
+
+frontend kubernetes_local
+  bind 127.0.0.1:7443
+  default_backend kubernetes_control_planes
+
+backend kubernetes_control_planes
+  balance roundrobin
+  option httpchk GET /readyz
+  http-check expect status 200
+  default-server inter 2s fall 3 rise 2
+{% for node in groups['control_plane'] %}
+  server {{ node }} {{ hostvars[node].unified_node_vpn_ip }}:6443 check check-ssl verify none
+{% endfor %}
+# Only health checks skip certificate verification; client TLS passes through.
+
+# Export only read-only metrics; do not distribute etcd client credentials.
+frontend etcd_metrics_private
+  bind {{ unified_node_vpn_ip }}:2381
+  mode http
+  acl metrics_path path -m str /metrics
+  acl get_request method GET
+  http-request deny unless metrics_path get_request
+  default_backend etcd_metrics_loopback
+
+backend etcd_metrics_loopback
+  mode http
+  server local_metrics 127.0.0.1:2381

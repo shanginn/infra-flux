@@ -1,0 +1,15 @@
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: GitRepository
+metadata:
+  name: garage-upstream
+spec:
+  interval: 1h
+  url: https://git.deuxfleurs.fr/Deuxfleurs/garage.git
+  ref:
+    tag: v2.4.1
+    commit: 268334bd2530fa99f8b06c7383b2e9f776691edd
+  ignore: |
+    /*
+    !/script/
+    /script/*
+    !/script/helm/

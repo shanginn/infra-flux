@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ item.name }}
+spec:
+  containers:
+    - name: {{ item.name }}
+      resources:
+        requests:
+          cpu: {{ item.cpu | to_json }}
+          memory: {{ item.memory | to_json }}

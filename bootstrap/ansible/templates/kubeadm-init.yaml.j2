@@ -1,0 +1,73 @@
+apiVersion: kubeadm.k8s.io/v1beta4
+kind: InitConfiguration
+bootstrapTokens:
+  - description: infra-flux-unified-initial
+    ttl: 30m
+nodeRegistration:
+  name: {{ inventory_hostname }}
+  criSocket: unix:///run/containerd/containerd.sock
+  taints: []
+  kubeletExtraArgs:
+    - name: node-ip
+      value: {{ unified_node_vpn_ip | to_json }}
+    - name: node-labels
+      value: {{ ('topology.kubernetes.io/zone=' ~ site ~ ',infra.shanginn.io/site=' ~ site) | to_json }}
+localAPIEndpoint:
+  advertiseAddress: {{ unified_node_vpn_ip }}
+  bindPort: 6443
+patches:
+  directory: {{ unified_kubeadm_root }}/patches
+timeouts:
+  controlPlaneComponentHealthCheck: 10m
+---
+apiVersion: kubeadm.k8s.io/v1beta4
+kind: ClusterConfiguration
+clusterName: {{ unified_cluster_name }}
+kubernetesVersion: {{ unified_kubernetes_version }}
+controlPlaneEndpoint: {{ unified_api_hostname }}:7443
+networking:
+  dnsDomain: cluster.local
+  podSubnet: {{ unified_pod_cidr }}
+  serviceSubnet: {{ unified_service_cidr }}
+apiServer:
+  certSANs:
+    - {{ unified_api_hostname }}
+    - 127.0.0.1
+{% for node in groups['control_plane'] %}
+    - {{ hostvars[node].unified_node_vpn_ip }}
+{% endfor %}
+etcd:
+  local:
+    dataDir: /var/lib/etcd
+    extraArgs:
+      - name: heartbeat-interval
+        value: {{ unified_etcd_heartbeat_ms | string | to_json }}
+      - name: election-timeout
+        value: {{ unified_etcd_election_ms | string | to_json }}
+---
+apiVersion: kubelet.config.k8s.io/v1beta1
+kind: KubeletConfiguration
+cgroupDriver: systemd
+failSwapOn: true
+readOnlyPort: 0
+rotateCertificates: true
+enforceNodeAllocatable:
+  - pods
+evictionHard:
+  memory.available: 200Mi
+  nodefs.available: 10%
+  imagefs.available: 15%
+  nodefs.inodesFree: 5%
+---
+apiVersion: kubeproxy.config.k8s.io/v1alpha1
+kind: KubeProxyConfiguration
+mode: iptables
+clusterCIDR: {{ unified_pod_cidr }}
+metricsBindAddress: 127.0.0.1:10249
+healthzBindAddress: 127.0.0.1:10256
+iptables:
+  localhostNodePorts: false
+nodePortAddresses:
+{% for node in groups['unified'] %}
+  - {{ hostvars[node].unified_node_vpn_ip }}/32
+{% endfor %}

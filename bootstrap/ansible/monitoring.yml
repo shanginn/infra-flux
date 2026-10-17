@@ -1,0 +1,119 @@
+---
+# Host prerequisites only. Kubernetes resources belong to clusters/unified/monitoring.
+# No apply, filesystem formatting, credentials, backup enablement or external receiver.
+- name: Prepare guarded local monitoring directories
+  hosts: unified
+  become: true
+  gather_facts: true
+  any_errors_fatal: true
+  vars:
+    monitoring_prepare_enabled: false
+    monitoring_owner: infra-flux/ansible/monitoring
+    monitoring_marker: /etc/infra-flux/monitoring.json
+    monitoring_data_dir: /var/lib/infra-monitoring/prometheus
+    monitoring_textfile_dir: /var/lib/node_exporter/textfile_collector
+    monitoring_root_reserve_bytes: 21474836480
+    monitoring_local_pv_bytes: 2147483648
+  tasks:
+    - name: Require deliberate preparation of all three known hosts
+      ansible.builtin.assert:
+        that:
+          - monitoring_prepare_enabled | bool
+          - not ansible_check_mode
+          - ansible_play_hosts_all | sort == ['fin', 'home', 'msk']
+          - ansible_facts.distribution == 'Debian'
+          - ansible_facts.distribution_major_version == '13'
+        fail_msg: Supply monitoring_prepare_enabled=true only after the runtime cluster exists; this does not deploy monitoring.
+
+    - name: Inspect existing ownership
+      ansible.builtin.stat:
+        path: "{{ monitoring_marker }}"
+      register: monitoring_marker_stat
+
+    - name: Read existing ownership
+      ansible.builtin.slurp:
+        src: "{{ monitoring_marker }}"
+      when: monitoring_marker_stat.stat.exists
+      register: monitoring_marker_content
+
+    - name: Inspect data directory without adopting it
+      ansible.builtin.stat:
+        path: "{{ monitoring_data_dir }}"
+      register: monitoring_data_stat
+
+    - name: Refuse unrelated storage or changed node identity
+      ansible.builtin.assert:
+        that:
+          - not (monitoring_data_stat.stat.islnk | default(false))
+          - >-
+            (not monitoring_data_stat.stat.exists and not monitoring_marker_stat.stat.exists) or
+            (monitoring_marker_stat.stat.exists and
+             (monitoring_marker_content.content | b64decode | from_json).managed_by == monitoring_owner and
+             (monitoring_marker_content.content | b64decode | from_json).node == inventory_hostname)
+
+    - name: Read actual registered node addresses
+      ansible.builtin.command:
+        argv: [kubectl, --kubeconfig=/etc/kubernetes/admin.conf, get, node, "{{ inventory_hostname }}", -o, json]
+      changed_when: false
+      register: monitoring_node
+
+    - name: Verify private-only host listener address and SSD reserve
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/python3
+          - -c
+          - |
+            import ipaddress,json,os,socket,subprocess,sys
+            node=json.loads(sys.argv[1]);name=sys.argv[2]
+            assert node['metadata']['name']==name
+            assert node['metadata']['labels']['infra.shanginn.io/site']==name
+            addresses=[a['address'] for a in node['status']['addresses'] if a['type']=='InternalIP']
+            assert len(addresses)==1
+            ip=ipaddress.ip_address(addresses[0])
+            assert ip in ipaddress.ip_network('100.64.0.0/10'), 'Node exporter would bind a non-VPN IP'
+            actual=subprocess.check_output(['tailscale','ip','-4'],text=True).strip()
+            assert str(ip)==actual
+            if sys.argv[4]=='new':
+                sock=socket.socket();sock.bind((str(ip),9100));sock.close()
+            fs=os.statvfs('/var/lib')
+            assert fs.f_bavail*fs.f_frsize >= int(sys.argv[3]), 'Insufficient free space for monitoring plus root reserve'
+            assert fs.f_favail >= 100000
+          - "{{ monitoring_node.stdout }}"
+          - "{{ inventory_hostname }}"
+          - "{{ monitoring_root_reserve_bytes | int + (monitoring_local_pv_bytes | int if inventory_hostname in ['msk','fin'] else 0) }}"
+          - "{{ 'owned' if monitoring_marker_stat.stat.exists else 'new' }}"
+      changed_when: false
+
+    - name: Create shared collector directory without replacing other producers
+      ansible.builtin.file:
+        path: "{{ monitoring_textfile_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: Create owned parent directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+      loop: [/etc/infra-flux, /var/lib/infra-monitoring]
+
+    - name: Create only the two small local-PV directories without formatting a disk
+      ansible.builtin.file:
+        path: "{{ monitoring_data_dir }}"
+        state: directory
+        owner: '65534'
+        group: '65534'
+        mode: '0750'
+      when: inventory_hostname in ['msk','fin']
+
+    - name: Persist ownership without claiming runtime monitoring success
+      ansible.builtin.copy:
+        dest: "{{ monitoring_marker }}"
+        content: "{{ {'managed_by': monitoring_owner, 'node': inventory_hostname, 'data_path': monitoring_data_dir, 'logical_pv_bytes': monitoring_local_pv_bytes, 'root_reserve_bytes': monitoring_root_reserve_bytes} | to_nice_json }}\n"
+        owner: root
+        group: root
+        mode: '0644'

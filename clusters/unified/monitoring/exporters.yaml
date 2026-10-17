@@ -1,0 +1,137 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata: {name: node-exporter}
+spec:
+  selector: {matchLabels: {app: node-exporter}}
+  template:
+    metadata:
+      labels: {app: node-exporter}
+    spec:
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      automountServiceAccountToken: false
+      nodeSelector: {kubernetes.io/os: linux}
+      tolerations:
+        - {operator: Exists, effect: NoSchedule}
+      securityContext: {runAsNonRoot: true, runAsUser: 65534, runAsGroup: 65534, seccompProfile: {type: RuntimeDefault}}
+      containers:
+        - name: node-exporter
+          image: quay.io/prometheus/node-exporter:v1.12.1@sha256:1b4e4438faca4dd7e001dd445d161a4a2091b0fededa84093b3a8dfeae1f1be0
+          args:
+            - --web.listen-address=$(HOST_IP):9100
+            - --path.procfs=/host/proc
+            - --path.sysfs=/host/sys
+            - --path.rootfs=/host/root
+            - --collector.disable-defaults
+            - --collector.cpu
+            - --collector.meminfo
+            - --collector.filesystem
+            - --collector.diskstats
+            - --collector.loadavg
+            - --collector.time
+            - --collector.uname
+            - --collector.netdev
+            - --collector.netstat
+            - --collector.stat
+            - --collector.vmstat
+            - --collector.textfile
+            - --collector.textfile.directory=/host/textfile
+            - --collector.filesystem.mount-points-exclude=^/(dev|proc|sys|var/lib/docker/.+|var/lib/kubelet/.+)($|/)
+            - --collector.netdev.device-exclude=^(veth.*|cali.*|docker.*|br-.*)$
+          env:
+            - name: HOST_IP
+              valueFrom: {fieldRef: {fieldPath: status.hostIP}}
+          ports: [{name: metrics, containerPort: 9100}]
+          resources:
+            requests: {cpu: 25m, memory: 32Mi}
+            limits: {cpu: 200m, memory: 128Mi}
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+          readinessProbe: {httpGet: {path: /metrics, port: metrics}, periodSeconds: 30, timeoutSeconds: 5}
+          volumeMounts:
+            - {name: proc, mountPath: /host/proc, readOnly: true}
+            - {name: sys, mountPath: /host/sys, readOnly: true}
+            - {name: root, mountPath: /host/root, readOnly: true, mountPropagation: HostToContainer}
+            - {name: textfile, mountPath: /host/textfile, readOnly: true}
+      volumes:
+        - {name: proc, hostPath: {path: /proc, type: Directory}}
+        - {name: sys, hostPath: {path: /sys, type: Directory}}
+        - {name: root, hostPath: {path: /, type: Directory}}
+        - {name: textfile, hostPath: {path: /var/lib/node_exporter/textfile_collector, type: Directory}}
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata: {name: blackbox-exporter}
+spec:
+  selector: {matchLabels: {app: blackbox-exporter}}
+  template:
+    metadata:
+      labels: {app: blackbox-exporter}
+    spec:
+      automountServiceAccountToken: false
+      securityContext: {runAsNonRoot: true, runAsUser: 65534, runAsGroup: 65534, seccompProfile: {type: RuntimeDefault}}
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - {key: infra.shanginn.io/site, operator: In, values: [msk, fin]}
+      containers:
+        - name: blackbox-exporter
+          image: quay.io/prometheus/blackbox-exporter:v0.29.0@sha256:9613f2884689b6fad9f1939f6a3b0388c93a022cfaededb19545b329b5c83dea
+          args: [--config.file=/etc/blackbox/blackbox.yml, --web.listen-address=:9115]
+          ports: [{name: metrics, containerPort: 9115}]
+          resources:
+            requests: {cpu: 10m, memory: 24Mi}
+            limits: {cpu: 100m, memory: 64Mi}
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+          readinessProbe: {httpGet: {path: /-/healthy, port: metrics}, periodSeconds: 30}
+          volumeMounts:
+            - {name: config, mountPath: /etc/blackbox, readOnly: true}
+      volumes:
+        - {name: config, configMap: {name: blackbox-config}}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: kube-state-metrics}
+spec:
+  replicas: 2
+  strategy: {type: RollingUpdate, rollingUpdate: {maxSurge: 0, maxUnavailable: 1}}
+  selector: {matchLabels: {app: kube-state-metrics}}
+  template:
+    metadata:
+      labels: {app: kube-state-metrics}
+    spec:
+      serviceAccountName: kube-state-metrics
+      securityContext: {runAsNonRoot: true, runAsUser: 65534, runAsGroup: 65534, seccompProfile: {type: RuntimeDefault}}
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - {key: infra.shanginn.io/site, operator: In, values: [msk, fin]}
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector: {matchLabels: {app: kube-state-metrics}}
+              topologyKey: kubernetes.io/hostname
+      containers:
+        - name: kube-state-metrics
+          image: registry.k8s.io/kube-state-metrics/kube-state-metrics:v2.20.0@sha256:42cfe3723a5f058171c627537fb57a3ea0f26e4380fa18555a95cb1a1b4cfc5b
+          args:
+            - --resources=nodes,pods,namespaces,persistentvolumes,persistentvolumeclaims,deployments,statefulsets,daemonsets,replicasets,jobs,cronjobs
+            - --metric-allowlist=kube_node_status_condition,kube_node_status_allocatable,kube_pod_status_phase,kube_pod_status_ready,kube_pod_container_status_restarts_total,kube_pod_container_status_waiting_reason,kube_pod_container_resource_requests,kube_deployment_spec_replicas,kube_deployment_status_replicas_available,kube_statefulset_replicas,kube_statefulset_status_replicas_ready,kube_daemonset_status_desired_number_scheduled,kube_daemonset_status_number_ready,kube_persistentvolumeclaim_status_phase,kube_job_status_failed,kube_cronjob_status_last_successful_time
+          ports:
+            - {name: metrics, containerPort: 8080}
+            - {name: telemetry, containerPort: 8081}
+          resources:
+            requests: {cpu: 25m, memory: 64Mi}
+            limits: {cpu: 200m, memory: 192Mi}
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+          readinessProbe: {httpGet: {path: /, port: telemetry}, periodSeconds: 30}
+          livenessProbe: {httpGet: {path: /healthz, port: metrics}, periodSeconds: 30}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: {name: kube-state-metrics}
+spec:
+  minAvailable: 1
+  selector: {matchLabels: {app: kube-state-metrics}}

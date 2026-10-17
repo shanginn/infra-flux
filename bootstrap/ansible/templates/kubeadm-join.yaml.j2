@@ -1,0 +1,28 @@
+apiVersion: kubeadm.k8s.io/v1beta4
+kind: JoinConfiguration
+nodeRegistration:
+  name: {{ inventory_hostname }}
+  criSocket: unix:///run/containerd/containerd.sock
+  taints: []
+  kubeletExtraArgs:
+    - name: node-ip
+      value: {{ unified_node_vpn_ip | to_json }}
+    - name: node-labels
+      value: {{ ('topology.kubernetes.io/zone=' ~ site ~ ',infra.shanginn.io/site=' ~ site) | to_json }}
+discovery:
+  bootstrapToken:
+    apiServerEndpoint: {{ unified_api_hostname }}:7443
+    token: {{ hostvars[unified_bootstrap_host].unified_join_token.stdout | trim | to_json }}
+    caCertHashes:
+      - sha256:{{ hostvars[unified_bootstrap_host].unified_ca_public_hash.stdout | trim }}
+controlPlane:
+  localAPIEndpoint:
+    advertiseAddress: {{ unified_node_vpn_ip }}
+    bindPort: 6443
+  certificateKey: {{ hostvars[unified_bootstrap_host].unified_certificate_key.stdout | trim | to_json }}
+patches:
+  directory: {{ unified_kubeadm_root }}/patches
+timeouts:
+  discovery: 10m
+  controlPlaneComponentHealthCheck: 10m
+  etcdAPICall: 5m

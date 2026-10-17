@@ -1,0 +1,705 @@
+---
+# Bootstrap only: no reset, migration, backup restore or in-place upgrade.
+# Supply explicit approval flags/private overrides with an extra-vars file outside Git.
+- name: Verify all three hosts before making Kubernetes changes
+  hosts: unified
+  become: true
+  gather_facts: true
+  any_errors_fatal: true
+  vars_files:
+    - vars/overlay.yml
+  vars: &cluster_defaults
+    unified_bootstrap_host: msk
+    unified_cluster_name: unified
+    unified_api_hostname: api.unified.internal
+    unified_kubernetes_version: v1.36.5
+    unified_etcd_heartbeat_ms: 250
+    unified_etcd_election_ms: 2500
+    unified_kubeadm_root: /etc/infra-flux/kubeadm
+    unified_cluster_marker: /etc/infra-flux/kubeadm-state.json
+    unified_cluster_owner: infra-flux/ansible/kubeadm
+    unified_admin_vpn_cidrs: []
+    unified_calico_version: v3.33.0
+    unified_calico_sha256: 2de8f47595fb9c41b3f47d7b767a1f8e72ecf84057af834738ff12689a234da5
+    unified_static_requests:
+      - {name: kube-apiserver, cpu: 250m, memory: 512Mi}
+      - {name: kube-controller-manager, cpu: 100m, memory: 128Mi}
+      - {name: kube-scheduler, cpu: 100m, memory: 64Mi}
+      - {name: etcd, cpu: 250m, memory: 512Mi}
+  tasks:
+    - name: Require deliberate bootstrap and the complete audited topology
+      ansible.builtin.assert:
+        that:
+          - unified_cluster_bootstrap_enabled | default(false) | bool
+          - unified_pod_cidr is defined
+          - unified_service_cidr is defined
+          - not ansible_check_mode
+          - groups['control_plane'] | length == 3
+          - groups['unified'] | sort == groups['control_plane'] | sort
+          - groups['control_plane'] | difference(groups['workers']) | length == 0
+          - ansible_play_hosts_all | sort == groups['unified'] | sort
+          - unified_bootstrap_host in groups['control_plane']
+          - ansible_facts.distribution == 'Debian'
+          - ansible_facts.distribution_major_version == '13'
+          - ansible_facts.architecture == 'x86_64'
+          - unified_etcd_election_ms | int >= (unified_etcd_heartbeat_ms | int * 10)
+        fail_msg: Bootstrap requires the three prepared hosts and explicit private unified_cluster_bootstrap_enabled=true. Check mode is not a deployment simulation.
+
+    - name: Read package versions and service state
+      ansible.builtin.package_facts:
+        manager: apt
+
+    - name: Require pinned Kubernetes and containerd packages
+      ansible.builtin.assert:
+        that:
+          - ansible_facts.packages['kubeadm'][0].version == kubernetes_package_version
+          - ansible_facts.packages['kubelet'][0].version == kubernetes_package_version
+          - ansible_facts.packages['containerd.io'][0].version == containerd_package_version
+
+    - name: Inspect cluster identity marker
+      ansible.builtin.stat:
+        path: "{{ unified_cluster_marker }}"
+      register: unified_marker_stat
+
+    - name: Read owned cluster marker
+      ansible.builtin.slurp:
+        src: "{{ unified_cluster_marker }}"
+      when: unified_marker_stat.stat.exists
+      register: unified_marker_content
+
+    - name: Decode cluster ownership
+      ansible.builtin.set_fact:
+        unified_existing: "{{ (unified_marker_content.content | b64decode | from_json) if unified_marker_stat.stat.exists else {} }}"
+
+    - name: Inspect cluster state without assuming a blank host
+      ansible.builtin.stat:
+        path: "{{ item }}"
+        checksum_algorithm: sha256
+      loop:
+        - /etc/kubernetes/admin.conf
+        - /etc/kubernetes/pki/ca.crt
+        - /var/lib/etcd/member
+        - /var/lib/kubelet/config.yaml
+        - /etc/rancher/k3s
+        - /var/lib/rancher/k3s
+        - /etc/rancher/rke2
+        - /var/lib/rancher/rke2
+      register: unified_existing_paths
+
+    - name: Verify cluster ownership and certificate identity
+      ansible.builtin.assert:
+        that:
+          - unified_existing_paths.results[4:] | selectattr('stat.exists') | list | length == 0
+          - >-
+            (unified_existing_paths.results[:4] | selectattr('stat.exists') | list | length == 0 and
+             not unified_marker_stat.stat.exists) or
+            (unified_existing.managed_by | default('') == unified_cluster_owner and
+             unified_existing.cluster_name | default('') == unified_cluster_name and
+             unified_existing.node_name | default('') == inventory_hostname and
+             unified_existing_paths.results[:4] | selectattr('stat.exists') | list | length == 4 and
+             unified_existing_paths.results[1].stat.checksum | default('') == unified_existing.ca_sha256 | default('invalid'))
+        fail_msg: Unknown/incomplete Kubernetes state or changed CA. Investigate explicitly; this playbook never resets or adopts it.
+
+    - name: Read Tailscale status
+      ansible.builtin.command: tailscale status --json
+      changed_when: false
+      register: unified_tailscale_status
+      no_log: true
+
+    - name: Read Tailscale control server preference privately
+      ansible.builtin.command: tailscale debug prefs
+      changed_when: false
+      register: unified_tailscale_prefs
+      no_log: true
+
+    - name: Read the actual VPN IPv4
+      ansible.builtin.command: tailscale ip -4
+      changed_when: false
+      register: unified_tailscale_ipv4
+
+    - name: Bind Kubernetes node identity to the registered Headscale address
+      ansible.builtin.set_fact:
+        unified_node_vpn_ip: "{{ unified_vpn_ipv4 | default(unified_tailscale_ipv4.stdout | trim) }}"
+
+    - name: Require the intended self-hosted network
+      ansible.builtin.assert:
+        that:
+          - (unified_tailscale_status.stdout | from_json).BackendState == 'Running'
+          - (unified_tailscale_prefs.stdout | from_json).ControlURL | trim('/') == ('https://' ~ headscale_hostname)
+          - unified_node_vpn_ip == unified_tailscale_ipv4.stdout | trim
+          - not unified_marker_stat.stat.exists or unified_existing.vpn_ipv4 == unified_node_vpn_ip
+        fail_msg: Headscale login or stable VPN IPv4 does not match this node's identity.
+      no_log: true
+
+    - name: Check cgroup v2, runtime route intersections and live swap use
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/python3
+          - -c
+          - |
+            import ipaddress,json,pathlib,subprocess,sys
+            pod,svc,vpn,owned,api,admins=sys.argv[1:]
+            networks=[ipaddress.ip_network(pod),ipaddress.ip_network(svc)]
+            assert not networks[0].overlaps(networks[1]), 'Pod and Service CIDRs overlap'
+            ip=ipaddress.ip_address(vpn)
+            assert ip.version==4 and ip in ipaddress.ip_network('100.64.0.0/10'), 'Expected Headscale CGNAT IPv4'
+            assert all(ip not in n for n in networks), 'VPN IP overlaps cluster CIDRs'
+            for x in json.loads(admins):
+              n=ipaddress.ip_network(x);assert n.version==4 and n.subnet_of(ipaddress.ip_network('100.64.0.0/10'))
+            assert pathlib.Path('/sys/fs/cgroup/cgroup.controllers').exists(), 'cgroup v2 required'
+            if owned!='true':
+              configs=[p.name for p in pathlib.Path('/etc/cni/net.d').glob('*') if p.suffix in {'.conf','.conflist','.json'}]
+              assert not configs, 'Existing unmanaged CNI configuration: '+','.join(configs)
+              for directory in ('/etc/kubernetes/manifests','/var/lib/etcd'):
+                path=pathlib.Path(directory)
+                entries=list(path.iterdir()) if path.exists() else []
+                for entry in entries:
+                  package_keep=(directory=='/etc/kubernetes/manifests' and entry.name=='.kubelet-keep' and not entry.is_symlink() and entry.is_file() and entry.stat().st_size==0)
+                  if package_keep:
+                    owner=subprocess.check_output(['dpkg-query','-S',str(entry)],text=True).strip()
+                    assert owner=='kubelet: '+str(entry), 'Unexpected package marker owner'
+                  else:
+                    raise AssertionError('Nonempty unmanaged cluster directory: '+directory)
+            addresses=json.loads(subprocess.check_output(['ip','-j','-4','address','show']))
+            routes=json.loads(subprocess.check_output(['ip','-j','-4','route','show','table','all']))
+            found=False
+            for link in addresses:
+              for a in link.get('addr_info',[]):
+                n=ipaddress.ip_network(a['local']+'/'+str(a['prefixlen']),strict=False)
+                if link['ifname']=='tailscale0' and a['local']==vpn:
+                  found=True;assert link['mtu']>=1280, 'Tailscale MTU below 1280'
+                if owned=='true' and link['ifname'].startswith(('cali','vxlan.calico')):continue
+                assert not any(n.overlaps(c) for c in networks), 'Existing interface overlaps cluster CIDR: '+str(n)
+            assert found, 'VPN IPv4 absent from tailscale0'
+            for r in routes:
+              dst=r.get('dst','default')
+              if dst=='default':continue
+              n=ipaddress.ip_network(dst,strict=False)
+              if n.prefixlen==0:continue
+              if owned=='true' and n.subnet_of(networks[0]) and (r.get('dev','').startswith(('cali','vxlan.calico')) or r.get('type')=='blackhole'):continue
+              assert not any(n.overlaps(c) for c in networks), 'Existing route overlaps cluster CIDR: '+str(n)
+            for line in pathlib.Path('/etc/hosts').read_text().splitlines():
+              fields=line.split('#',1)[0].split()
+              if api in fields[1:]:assert fields[0]=='127.0.0.1', 'API hostname already has a different mapping'
+            swaps=[x.split() for x in pathlib.Path('/proc/swaps').read_text().splitlines()[1:]]
+            assert all(int(x[3])==0 for x in swaps), 'Swap is in use; refuse automatic swapoff'
+            fstab=pathlib.Path('/etc/fstab').read_text().splitlines()
+            fstab_swaps=[x.split() for x in fstab if x.strip() and not x.lstrip().startswith('#') and len(x.split())>2 and x.split()[2]=='swap']
+            print(json.dumps({'active_swap_count':len(swaps),'fstab_swap_count':len(fstab_swaps)}))
+          - "{{ unified_pod_cidr }}"
+          - "{{ unified_service_cidr }}"
+          - "{{ unified_node_vpn_ip }}"
+          - "{{ unified_marker_stat.stat.exists | ternary('true', 'false') }}"
+          - "{{ unified_api_hostname }}"
+          - "{{ unified_admin_vpn_cidrs | to_json }}"
+      changed_when: false
+      register: unified_network_preflight
+
+    - name: Require explicit swap disable guard when OS configuration needs changing
+      ansible.builtin.assert:
+        that:
+          - >-
+            ((unified_network_preflight.stdout | from_json).active_swap_count == 0 and
+             (unified_network_preflight.stdout | from_json).fstab_swap_count == 0) or
+            unified_allow_swap_disable | default(false) | bool
+        fail_msg: Set unified_allow_swap_disable=true only after live zero-use verification and review of host service impact.
+
+    - name: Reject unexpected listeners on a fresh node
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/python3
+          - -c
+          - |
+            import pathlib,re,subprocess,sys
+            protected={2379,2380,2381,6443,7443,10250,10257,10259}
+            for line in subprocess.check_output(['ss','-H','-lntp'],text=True).splitlines():
+              addr=line.split()[3]
+              if int(addr.rsplit(':',1)[-1]) not in protected:continue
+              # A previous bootstrap can stop after preparing our frontend but before join.
+              assert addr in {'127.0.0.1:7443',sys.argv[1]+':2381'}, 'Unexpected protected listener: '+addr
+              pids=re.findall(r'pid=(\d+)',line)
+              assert pids, 'Cannot identify listener owner'
+              for pid in pids:
+                process=pathlib.Path('/proc')/pid
+                assert b'/etc/infra-flux/kubeadm/haproxy.cfg' in (process/'cmdline').read_bytes().split(b'\0')
+                assert '/infra-k8s-api-proxy.service' in (process/'cgroup').read_text()
+          - "{{ unified_node_vpn_ip }}"
+      changed_when: false
+      when: not unified_marker_stat.stat.exists
+
+- name: Prepare private networking and node bootstrap files
+  hosts: unified
+  become: true
+  gather_facts: false
+  serial: 1
+  any_errors_fatal: true
+  vars_files:
+    - vars/overlay.yml
+  vars: *cluster_defaults
+  tasks:
+    - name: Identify the exact bootstrap templates before inspecting ownership
+      ansible.builtin.set_fact:
+        unified_template_hashes: "{{ unified_template_hashes | default({}) | combine({item | basename: lookup('ansible.builtin.file', item) | hash('sha256')}) }}"
+      loop: "{{ query('ansible.builtin.fileglob', playbook_dir ~ '/templates/kubeadm*') | sort }}"
+      loop_control:
+        label: "{{ item | basename }}"
+
+    - name: Check distinct peer identities and immutable bootstrap settings
+      ansible.builtin.set_fact:
+        unified_fingerprint: "{{ {'peers': groups['unified'] | map('extract', hostvars, 'unified_node_vpn_ip') | list, 'pods': unified_pod_cidr, 'services': unified_service_cidr, 'version': unified_kubernetes_version, 'api': unified_api_hostname, 'site': site, 'heartbeat': unified_etcd_heartbeat_ms, 'election': unified_etcd_election_ms, 'calico': unified_calico_sha256, 'requests': unified_static_requests, 'admin_cidrs': unified_admin_vpn_cidrs, 'templates': unified_template_hashes, 'playbook': lookup('ansible.builtin.file', playbook_dir ~ '/cluster.yml') | hash('sha256')} | to_json | hash('sha256') }}"
+
+    - name: Refuse duplicate VPN addresses and implicit cluster reconfiguration
+      ansible.builtin.assert:
+        that:
+          - groups['unified'] | map('extract', hostvars, 'unified_node_vpn_ip') | unique | list | length == 3
+          - not unified_marker_stat.stat.exists or unified_existing.fingerprint == unified_fingerprint
+        fail_msg: Existing cluster settings changed; use a reviewed reconfiguration/upgrade procedure.
+
+    - name: Require peer connectivity over Tailscale before bootstrap
+      ansible.builtin.command:
+        argv: [ping, -I, tailscale0, -c, '2', -W, '3', "{{ hostvars[item].unified_node_vpn_ip }}"]
+      loop: "{{ groups['unified'] | difference([inventory_hostname]) }}"
+      changed_when: false
+
+    - name: Install only supporting packages without starting stock services
+      ansible.builtin.apt:
+        name:
+          - "haproxy={{ overlay_haproxy_version }}"
+          - iptables
+          - kmod
+        state: present
+        install_recommends: false
+        fail_on_autoremove: true
+        policy_rc_d: 101
+
+    - name: Create isolated bootstrap directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: root
+        group: root
+        mode: '0700'
+      loop:
+        - "{{ unified_kubeadm_root }}"
+        - "{{ unified_kubeadm_root }}/patches"
+        - "{{ unified_kubeadm_root }}/calico"
+
+    - name: Render per-node bootstrap configuration
+      ansible.builtin.template:
+        src: "{{ item.src }}"
+        dest: "{{ item.dest }}"
+        owner: root
+        group: root
+        mode: "{{ item.mode | default('0600') }}"
+      loop:
+        - {src: kubeadm-init.yaml.j2, dest: "{{ unified_kubeadm_root }}/init.yaml"}
+        - {src: kubeadm-kubelet-patch.yaml.j2, dest: "{{ unified_kubeadm_root }}/patches/kubeletconfiguration+merge.yaml"}
+        - {src: kubeadm-apiserver-bind.json.j2, dest: "{{ unified_kubeadm_root }}/patches/kube-apiserver1+json.json"}
+        - {src: kubeadm-coredns-patch.yaml.j2, dest: "{{ unified_kubeadm_root }}/patches/corednsdeployment0+strategic.yaml"}
+        - {src: kubeadm-haproxy.cfg.j2, dest: "{{ unified_kubeadm_root }}/haproxy.cfg"}
+        - {src: kubeadm-firewall.sh.j2, dest: "{{ unified_kubeadm_root }}/firewall.sh", mode: '0700'}
+        - {src: kubeadm-wait-vpn.sh.j2, dest: "{{ unified_kubeadm_root }}/wait-vpn.sh", mode: '0700'}
+
+    - name: Render separate requests for control-plane static pods
+      ansible.builtin.template:
+        src: kubeadm-static-resources.yaml.j2
+        dest: "{{ unified_kubeadm_root }}/patches/{{ item.name }}0+strategic.yaml"
+        owner: root
+        group: root
+        mode: '0600'
+      loop: "{{ unified_static_requests }}"
+
+    - name: Validate kubeadm configuration and HAProxy before enabling services
+      ansible.builtin.command:
+        argv: "{{ item }}"
+      loop:
+        - [kubeadm, config, validate, --config, "{{ unified_kubeadm_root }}/init.yaml"]
+        - [haproxy, -c, -f, "{{ unified_kubeadm_root }}/haproxy.cfg"]
+      changed_when: false
+
+    - name: Map the common API hostname to this node's local frontend
+      ansible.builtin.blockinfile:
+        path: /etc/hosts
+        marker: '# {mark} infra-flux kubeadm local API'
+        block: "127.0.0.1 {{ unified_api_hostname }}"
+
+    - name: Install the dedicated protective firewall service
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/infra-k8s-firewall.service
+        mode: '0644'
+        content: |
+          [Unit]
+          Description=Private Kubernetes listener protection
+          Before=kubelet.service infra-k8s-api-proxy.service
+          [Service]
+          Type=oneshot
+          RemainAfterExit=yes
+          ExecStart={{ unified_kubeadm_root }}/firewall.sh
+          [Install]
+          WantedBy=multi-user.target
+
+    - name: Install the local API frontend independently of overlay HAProxy
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/infra-k8s-api-proxy.service
+        mode: '0644'
+        content: |
+          [Unit]
+          Description=Local Kubernetes API frontend
+          Requires=infra-k8s-firewall.service
+          After=infra-k8s-firewall.service tailscaled.service
+          [Service]
+          ExecStart=/usr/sbin/haproxy -W -db -f {{ unified_kubeadm_root }}/haproxy.cfg
+          Restart=always
+          RestartSec=2
+          [Install]
+          WantedBy=multi-user.target
+
+    - name: Create the kubelet startup ordering directory
+      ansible.builtin.file:
+        path: /etc/systemd/system/kubelet.service.d
+        state: directory
+        mode: '0755'
+
+    - name: Require VPN identity and firewall before kubelet after every boot
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/kubelet.service.d/20-infra-vpn.conf
+        mode: '0644'
+        content: |
+          [Unit]
+          Requires=tailscaled.service infra-k8s-api-proxy.service infra-k8s-firewall.service
+          After=tailscaled.service infra-k8s-api-proxy.service infra-k8s-firewall.service
+          [Service]
+          ExecStartPre={{ unified_kubeadm_root }}/wait-vpn.sh
+
+    - name: Enable firewall before a Kubernetes process can bind
+      ansible.builtin.systemd_service:
+        name: infra-k8s-firewall
+        state: started
+        enabled: true
+        daemon_reload: true
+
+    - name: Enable the node-local API frontend
+      ansible.builtin.systemd_service:
+        name: infra-k8s-api-proxy
+        state: started
+        enabled: true
+
+    - name: Load the modules required by containerd and VXLAN
+      ansible.builtin.command:
+        argv: [modprobe, "{{ item }}"]
+      loop: [overlay, br_netfilter, vxlan]
+      changed_when: false
+
+    - name: Persist only the required module list and forwarding settings
+      ansible.builtin.copy:
+        dest: "{{ item.dest }}"
+        content: "{{ item.content }}"
+        mode: '0644'
+      loop:
+        - {dest: /etc/modules-load.d/infra-kubeadm.conf, content: "overlay\nbr_netfilter\nvxlan\n"}
+        - {dest: /etc/sysctl.d/90-infra-kubeadm.conf, content: "net.ipv4.ip_forward = 1\nnet.bridge.bridge-nf-call-iptables = 1\n"}
+
+    - name: Apply only the dedicated sysctl file
+      ansible.builtin.command: sysctl -p /etc/sysctl.d/90-infra-kubeadm.conf
+      changed_when: false
+
+    - name: Disable unused swap only behind the explicit guard
+      when: unified_allow_swap_disable | default(false) | bool
+      block:
+        - name: Recheck swap immediately before disabling it
+          ansible.builtin.command:
+            argv:
+              - /usr/bin/python3
+              - -c
+              - |
+                import pathlib,subprocess
+                rows=[x.split() for x in pathlib.Path('/proc/swaps').read_text().splitlines()[1:]]
+                assert all(int(x[3])==0 for x in rows), 'Swap became active; refusing swapoff'
+                if rows:subprocess.run(['swapoff','--all'],check=True)
+                print('changed' if rows else 'unchanged')
+          register: unified_swap_off
+          changed_when: unified_swap_off.stdout == 'changed'
+
+        - name: Preserve old fstab lines as comments to keep swap disabled after reboot
+          ansible.builtin.replace:
+            path: /etc/fstab
+            regexp: '^([ \t]*[^#\s]\S*[ \t]+\S+[ \t]+swap[ \t]+.*)$'
+            replace: '# infra-flux kubeadm disabled swap: \1'
+            backup: true
+          register: unified_swap_fstab
+
+        - name: Reload generated swap units after fstab change
+          ansible.builtin.systemd_service:
+            daemon_reload: true
+          when: unified_swap_fstab.changed
+
+    - name: Pull pinned control-plane images before creating membership
+      ansible.builtin.command:
+        argv: [kubeadm, config, images, pull, --config, "{{ unified_kubeadm_root }}/init.yaml"]
+      changed_when: false
+      when: not unified_marker_stat.stat.exists
+
+- name: Initialize the first control plane and prepare the CNI
+  hosts: "{{ unified_bootstrap_host | default('msk') }}"
+  become: true
+  gather_facts: false
+  any_errors_fatal: true
+  vars: *cluster_defaults
+  tasks:
+    - name: Initialize the first control plane without exposing join credentials
+      ansible.builtin.command:
+        argv: [kubeadm, init, --config, "{{ unified_kubeadm_root }}/init.yaml", --skip-token-print]
+      when: not unified_marker_stat.stat.exists
+      no_log: true
+
+    - name: Wait for the API frontend to report ready
+      ansible.builtin.command:
+        argv: [kubectl, --kubeconfig=/etc/kubernetes/admin.conf, --request-timeout=10s, get, --raw=/readyz]
+      register: unified_api_ready
+      until: unified_api_ready.rc == 0
+      retries: 30
+      delay: 2
+      changed_when: false
+
+    - name: Read the established CA fingerprint
+      ansible.builtin.stat:
+        path: /etc/kubernetes/pki/ca.crt
+        checksum_algorithm: sha256
+      register: unified_local_ca
+
+    - name: Record successfully created cluster identity
+      ansible.builtin.copy:
+        dest: "{{ unified_cluster_marker }}"
+        mode: '0600'
+        content: |
+          {{ {'managed_by': unified_cluster_owner, 'cluster_name': unified_cluster_name, 'node_name': inventory_hostname, 'vpn_ipv4': unified_node_vpn_ip, 'ca_sha256': unified_local_ca.stat.checksum, 'fingerprint': unified_fingerprint} | to_nice_json }}
+
+    - name: Download the exact reviewed upstream CNI manifest
+      ansible.builtin.get_url:
+        url: "https://raw.githubusercontent.com/projectcalico/calico/{{ unified_calico_version }}/manifests/calico.yaml"
+        dest: "{{ unified_kubeadm_root }}/calico/upstream-calico.yaml"
+        checksum: "sha256:{{ unified_calico_sha256 }}"
+        mode: '0600'
+
+    - name: Render IPv4-only VXLAN-over-Tailscale configuration
+      ansible.builtin.template:
+        src: kubeadm-calico-kustomization.yaml.j2
+        dest: "{{ unified_kubeadm_root }}/calico/kustomization.yaml"
+        mode: '0600'
+
+    - name: Apply the CNI with server-side CRD handling
+      ansible.builtin.command:
+        argv: [kubectl, --kubeconfig=/etc/kubernetes/admin.conf, apply, --server-side, --field-manager=infra-flux-bootstrap, -k, "{{ unified_kubeadm_root }}/calico"]
+      register: unified_calico_apply
+      changed_when: "'created' in unified_calico_apply.stdout or 'configured' in unified_calico_apply.stdout"
+
+    - name: Create short-lived bootstrap credentials only when another host needs joining
+      when: groups['unified'] | map('extract', hostvars, 'unified_marker_stat') | selectattr('stat.exists', 'equalto', false) | list | length > 0
+      block:
+        - name: Create a short-lived discovery token
+          ansible.builtin.command: kubeadm token create --ttl=30m --description=infra-flux-unified-bootstrap
+          register: unified_join_token
+          no_log: true
+
+        - name: Upload certificates using the pinned configuration and capture the generated key privately
+          ansible.builtin.command:
+            argv: [kubeadm, init, phase, upload-certs, --config, "{{ unified_kubeadm_root }}/init.yaml", --upload-certs]
+          register: unified_certificate_upload
+          no_log: true
+
+        - name: Require exactly one generated temporary certificate key
+          ansible.builtin.assert:
+            that:
+              - unified_certificate_upload.stdout | regex_findall('(?m)^[a-f0-9]{64}$') | length == 1
+          no_log: true
+
+        - name: Keep the generated key only in this bootstrap process
+          ansible.builtin.set_fact:
+            unified_certificate_key:
+              stdout: "{{ unified_certificate_upload.stdout | regex_findall('(?m)^[a-f0-9]{64}$') | first }}"
+          no_log: true
+
+        - name: Calculate the discovery CA public-key hash
+          ansible.builtin.shell: |
+            set -o pipefail
+            openssl x509 -pubkey -in /etc/kubernetes/pki/ca.crt -noout |
+              openssl pkey -pubin -outform DER |
+              sha256sum | cut -d ' ' -f 1
+          args:
+            executable: /bin/bash
+          register: unified_ca_public_hash
+          changed_when: false
+
+- name: Join the remaining control planes one at a time
+  hosts: unified
+  become: true
+  gather_facts: false
+  serial: 1
+  any_errors_fatal: true
+  vars: *cluster_defaults
+  tasks:
+    - name: Join only new peers, leaving established membership untouched
+      when:
+        - inventory_hostname != unified_bootstrap_host
+        - not unified_marker_stat.stat.exists
+      block:
+        - name: Write a private temporary join configuration
+          ansible.builtin.template:
+            src: kubeadm-join.yaml.j2
+            dest: "{{ unified_kubeadm_root }}/join.yaml"
+            mode: '0600'
+          no_log: true
+
+        - name: Join this control plane with its own VPN address
+          ansible.builtin.command:
+            argv: [kubeadm, join, --config, "{{ unified_kubeadm_root }}/join.yaml"]
+          no_log: true
+
+        - name: Read this node's joined CA fingerprint
+          ansible.builtin.stat:
+            path: /etc/kubernetes/pki/ca.crt
+            checksum_algorithm: sha256
+          register: unified_joined_ca
+
+        - name: Verify the peer belongs to the same cluster
+          ansible.builtin.assert:
+            that:
+              - unified_joined_ca.stat.checksum == hostvars[unified_bootstrap_host].unified_local_ca.stat.checksum
+
+        - name: Record joined node ownership
+          ansible.builtin.copy:
+            dest: "{{ unified_cluster_marker }}"
+            mode: '0600'
+            content: |
+              {{ {'managed_by': unified_cluster_owner, 'cluster_name': unified_cluster_name, 'node_name': inventory_hostname, 'vpn_ipv4': unified_node_vpn_ip, 'ca_sha256': unified_joined_ca.stat.checksum, 'fingerprint': unified_fingerprint} | to_nice_json }}
+      always:
+        - name: Remove temporary join credentials from this node
+          ansible.builtin.file:
+            path: "{{ unified_kubeadm_root }}/join.yaml"
+            state: absent
+
+    - name: Keep kubelet enabled after successful bootstrap
+      ansible.builtin.systemd_service:
+        name: kubelet
+        enabled: true
+        state: started
+
+- name: Verify the resulting three-node cluster and revoke bootstrap credentials
+  hosts: "{{ unified_bootstrap_host | default('msk') }}"
+  become: true
+  gather_facts: false
+  any_errors_fatal: true
+  vars: *cluster_defaults
+  tasks:
+    - name: Wait for all intended nodes to become Ready
+      ansible.builtin.command:
+        argv: [kubectl, --kubeconfig=/etc/kubernetes/admin.conf, wait, --for=condition=Ready, node, "{{ item }}", --timeout=120s]
+      loop: "{{ groups['unified'] }}"
+      changed_when: false
+
+    - name: Wait for all Calico agents
+      ansible.builtin.command:
+        argv: [kubectl, --kubeconfig=/etc/kubernetes/admin.conf, -n, kube-system, rollout, status, daemonset/calico-node, --timeout=120s]
+      changed_when: false
+
+    - name: Wait for the two DNS replicas distributed across the VPS nodes
+      ansible.builtin.command:
+        argv: [kubectl, --kubeconfig=/etc/kubernetes/admin.conf, -n, kube-system, rollout, status, deployment/coredns, --timeout=120s]
+      changed_when: false
+
+    - name: Read etcd member count through the local authenticated member
+      ansible.builtin.command:
+        argv:
+          - kubectl
+          - --kubeconfig=/etc/kubernetes/admin.conf
+          - -n
+          - kube-system
+          - exec
+          - "etcd-{{ inventory_hostname }}"
+          - --
+          - etcdctl
+          - --endpoints=https://127.0.0.1:2379
+          - --cacert=/etc/kubernetes/pki/etcd/ca.crt
+          - --cert=/etc/kubernetes/pki/etcd/healthcheck-client.crt
+          - --key=/etc/kubernetes/pki/etcd/healthcheck-client.key
+          - member
+          - list
+          - --write-out=json
+      register: unified_etcd_members
+      changed_when: false
+
+    - name: Require exactly three etcd voting members
+      ansible.builtin.assert:
+        that:
+          - (unified_etcd_members.stdout | from_json).members | length == 3
+          - (unified_etcd_members.stdout | from_json).members | selectattr('isLearner', 'defined') | selectattr('isLearner') | list | length == 0
+
+    - name: Require all etcd endpoints to answer authenticated health checks
+      ansible.builtin.command:
+        argv:
+          - kubectl
+          - --kubeconfig=/etc/kubernetes/admin.conf
+          - -n
+          - kube-system
+          - exec
+          - "etcd-{{ inventory_hostname }}"
+          - --
+          - etcdctl
+          - --endpoints=https://127.0.0.1:2379
+          - --cacert=/etc/kubernetes/pki/etcd/ca.crt
+          - --cert=/etc/kubernetes/pki/etcd/healthcheck-client.crt
+          - --key=/etc/kubernetes/pki/etcd/healthcheck-client.key
+          - endpoint
+          - health
+          - --cluster
+          - --write-out=json
+      changed_when: false
+
+    - name: Read the established node addresses and scheduling state
+      ansible.builtin.command:
+        argv: [kubectl, --kubeconfig=/etc/kubernetes/admin.conf, get, nodes, -o, json]
+      register: unified_live_nodes
+      changed_when: false
+
+    - name: Verify VPN node addresses and all three worker roles
+      ansible.builtin.assert:
+        that:
+          - (unified_live_nodes.stdout | from_json)['items'] | length == 3
+          - item.status.addresses | selectattr('type', 'equalto', 'InternalIP') | map(attribute='address') | list == [hostvars[item.metadata.name].unified_node_vpn_ip]
+          - not item.spec.unschedulable | default(false)
+          - item.spec.taints | default([]) | selectattr('key', 'equalto', 'node-role.kubernetes.io/control-plane') | list | length == 0
+      loop: "{{ (unified_live_nodes.stdout | from_json)['items'] }}"
+      loop_control:
+        label: "{{ item.metadata.name }}"
+
+    - name: Remove only this automation's initial and join tokens after all joins
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/python3
+          - -c
+          - |
+            import base64,json,subprocess
+            kubectl=['kubectl','--kubeconfig=/etc/kubernetes/admin.conf','-n','kube-system']
+            secrets=json.loads(subprocess.check_output(kubectl+['get','secrets','--field-selector=type=bootstrap.kubernetes.io/token','-o','json']))
+            deleted=0
+            for secret in secrets['items']:
+              description=base64.b64decode(secret.get('data',{}).get('description','')).decode()
+              if description not in {'infra-flux-unified-initial','infra-flux-unified-bootstrap'}:continue
+              name=secret['metadata']['name']
+              assert name.startswith('bootstrap-token-')
+              subprocess.run(kubectl+['delete','secret',name,'--ignore-not-found'],check=True,stdout=subprocess.DEVNULL)
+              deleted+=1
+            print(deleted)
+      register: unified_revoked_tokens
+      changed_when: unified_revoked_tokens.stdout | int > 0
+      no_log: true
+
+    - name: Remove the temporary uploaded certificate Secret
+      ansible.builtin.command:
+        argv: [kubectl, --kubeconfig=/etc/kubernetes/admin.conf, -n, kube-system, delete, secret, kubeadm-certs, --ignore-not-found]
+      when: unified_certificate_key is defined and unified_certificate_key.stdout is defined
+      no_log: true
+
+    - name: Report only the bootstrap scope
+      ansible.builtin.debug:
+        msg: Three kubeadm control planes are Ready with three etcd members. Application migration, backups, ingress and failure tests remain separate operations.

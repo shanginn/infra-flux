@@ -1,0 +1,9 @@
+apiVersion: kubelet.config.k8s.io/v1beta1
+kind: KubeletConfiguration
+address: {{ unified_node_vpn_ip }}
+systemReserved:
+  cpu: {{ (unified_system_reserved_cpu | default('2' if site == 'home' else '1')) | to_json }}
+  memory: {{ (unified_system_reserved_memory | default('8Gi' if site == 'home' else '4Gi')) | to_json }}
+# Reserve capacity without placing existing host services in a new cgroup.
+enforceNodeAllocatable:
+  - pods

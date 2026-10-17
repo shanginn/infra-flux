@@ -1,0 +1,114 @@
+global:
+  scrape_interval: 60s
+  scrape_timeout: 15s
+  evaluation_interval: 30s
+  sample_limit: 20000
+  body_size_limit: 10MB
+  label_limit: 40
+  keep_dropped_targets: 20
+  external_labels:
+    cluster: unified
+    replica: $POD_NAME
+rule_files: [/etc/prometheus/rules.yml]
+alerting:
+  alert_relabel_configs:
+    - action: labeldrop
+      regex: replica
+  alertmanagers:
+    - kubernetes_sd_configs:
+        - role: pod
+          namespaces: {names: [monitoring]}
+      relabel_configs:
+        - {source_labels: [__meta_kubernetes_pod_label_app], regex: alertmanager, action: keep}
+        - {source_labels: [__meta_kubernetes_pod_container_port_name], regex: http, action: keep}
+        - {source_labels: [__meta_kubernetes_pod_ready], regex: 'true', action: keep}
+scrape_configs:
+  - job_name: garage
+    target_limit: 3
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces: {names: [garage]}
+    relabel_configs:
+      - {source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_name], regex: garage, action: keep}
+      - {source_labels: [__meta_kubernetes_pod_container_port_name], regex: admin, action: keep}
+      - {source_labels: [__meta_kubernetes_pod_node_name], target_label: node}
+    metric_relabel_configs:
+      - source_labels: [__name__]
+        regex: 'garage_.*|cluster_.*|block_resync_.*|block_ram_buffer_free_kb|api_s3_.*|process_.*'
+        action: keep
+  - job_name: node-exporter
+    target_limit: 3
+    kubernetes_sd_configs: [{role: node}]
+    relabel_configs:
+      - {source_labels: [__meta_kubernetes_node_name], regex: 'home|msk|fin', action: keep}
+      - {source_labels: [__meta_kubernetes_node_address_InternalIP], regex: '100\..*', action: keep}
+      - {source_labels: [__meta_kubernetes_node_address_InternalIP], target_label: __address__, replacement: '$1:9100'}
+      - {source_labels: [__meta_kubernetes_node_name], target_label: node}
+      - {source_labels: [__meta_kubernetes_node_label_infra_shanginn_io_site], target_label: site}
+  - job_name: etcd
+    target_limit: 3
+    # Read-only HAProxy GET /metrics frontend; no etcd credentials in this stack.
+    kubernetes_sd_configs: [{role: node}]
+    relabel_configs:
+      - {source_labels: [__meta_kubernetes_node_name], regex: 'home|msk|fin', action: keep}
+      - {source_labels: [__meta_kubernetes_node_address_InternalIP], regex: '100\..*', action: keep}
+      - {source_labels: [__meta_kubernetes_node_address_InternalIP], target_label: __address__, replacement: '$1:2381'}
+      - {source_labels: [__meta_kubernetes_node_name], target_label: node}
+    metric_relabel_configs:
+      - source_labels: [__name__]
+        regex: 'etcd_server_has_leader|etcd_server_leader_changes_seen_total|etcd_server_proposals_failed_total|etcd_server_proposals_pending|etcd_disk_wal_fsync_duration_seconds_.*|etcd_disk_backend_commit_duration_seconds_.*|etcd_mvcc_db_total_size_in_bytes|etcd_server_quota_backend_bytes|etcd_network_peer_round_trip_time_seconds_.*|process_resident_memory_bytes'
+        action: keep
+  - job_name: kube-state-metrics
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces: {names: [monitoring]}
+    relabel_configs:
+      - {source_labels: [__meta_kubernetes_pod_label_app], regex: kube-state-metrics, action: keep}
+      - {source_labels: [__meta_kubernetes_pod_container_port_name], regex: metrics, action: keep}
+      - {source_labels: [__meta_kubernetes_pod_ready], regex: 'true', action: keep}
+  - job_name: monitoring
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces: {names: [monitoring]}
+    relabel_configs:
+      - {source_labels: [__meta_kubernetes_pod_label_app], regex: 'prometheus|alertmanager|blackbox-exporter', action: keep}
+      - {source_labels: [__meta_kubernetes_pod_container_port_name], regex: 'http|metrics', action: keep}
+      - {source_labels: [__meta_kubernetes_pod_ready], regex: 'true', action: keep}
+      - {source_labels: [__meta_kubernetes_pod_label_app], target_label: app}
+      - {source_labels: [__meta_kubernetes_pod_node_name], target_label: node}
+  - job_name: headscale-https
+    metrics_path: /probe
+    params: {module: [https_2xx]}
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces: {names: [monitoring]}
+    relabel_configs:
+      - {source_labels: [__meta_kubernetes_pod_label_app], regex: blackbox-exporter, action: keep}
+      - {source_labels: [__meta_kubernetes_pod_container_port_name], regex: metrics, action: keep}
+      - {target_label: __param_target, replacement: 'https://vpn.shanginn.io/health'}
+      - {source_labels: [__meta_kubernetes_pod_node_name], target_label: probe_node}
+      - {source_labels: [__param_target], target_label: instance}
+  - job_name: derp-msk-https
+    metrics_path: /probe
+    params: {module: [https_2xx]}
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces: {names: [monitoring]}
+    relabel_configs:
+      - {source_labels: [__meta_kubernetes_pod_label_app], regex: blackbox-exporter, action: keep}
+      - {source_labels: [__meta_kubernetes_pod_container_port_name], regex: metrics, action: keep}
+      - {target_label: __param_target, replacement: 'https://derp-msk.shanginn.io/derp/probe'}
+      - {source_labels: [__meta_kubernetes_pod_node_name], target_label: probe_node}
+      - {source_labels: [__param_target], target_label: instance}
+  - job_name: derp-fin-https
+    metrics_path: /probe
+    params: {module: [https_2xx]}
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces: {names: [monitoring]}
+    relabel_configs:
+      - {source_labels: [__meta_kubernetes_pod_label_app], regex: blackbox-exporter, action: keep}
+      - {source_labels: [__meta_kubernetes_pod_container_port_name], regex: metrics, action: keep}
+      - {target_label: __param_target, replacement: 'https://derp-fin.shanginn.io/derp/probe'}
+      - {source_labels: [__meta_kubernetes_pod_node_name], target_label: probe_node}
+      - {source_labels: [__param_target], target_label: instance}

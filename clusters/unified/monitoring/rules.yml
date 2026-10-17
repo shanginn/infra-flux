@@ -1,0 +1,171 @@
+groups:
+  - name: garage
+    rules:
+      - alert: GarageMetricsUnavailable
+        expr: up{job="garage"} == 0
+        for: 3m
+        labels: {severity: warning}
+        annotations: {summary: 'Garage metrics unavailable on {{ $labels.node }}'}
+      - alert: GarageQuorumUnavailable
+        expr: cluster_available{job="garage"} == 0
+        for: 2m
+        labels: {severity: critical}
+        annotations: {summary: 'Garage cannot serve all partitions according to {{ $labels.node }}'}
+      - alert: GarageReplicaUnavailable
+        expr: cluster_storage_nodes_ok{job="garage"} < 3
+        for: 5m
+        labels: {severity: warning}
+        annotations: {summary: 'Garage sees fewer than three connected storage nodes from {{ $labels.node }}'}
+      - alert: GarageReplicationErrors
+        expr: block_resync_errored_blocks{job="garage"} > 0
+        for: 15m
+        labels: {severity: critical}
+        annotations: {summary: 'Garage has persistent block resync failures on {{ $labels.node }}'}
+      - alert: GarageRootReserveLow
+        expr: garage_local_disk_avail{job="garage"} < 21474836480
+        for: 5m
+        labels: {severity: critical}
+        annotations: {summary: 'Garage root filesystem reserve below 20 GiB on {{ $labels.node }}'}
+  - name: availability
+    rules:
+      - alert: NodeExporterUnavailable
+        expr: up{job="node-exporter"} == 0
+        for: 3m
+        labels: {severity: critical}
+        annotations: {summary: 'Node metrics unavailable on {{ $labels.node }}'}
+      - alert: ExpectedNodeMissing
+        expr: count(up{job="node-exporter"}) < 3
+        for: 5m
+        labels: {severity: critical}
+        annotations: {summary: Fewer than three node targets discovered}
+      - alert: KubernetesNodeNotReady
+        expr: max by (node) (kube_node_status_condition{condition="Ready",status="true"}) == 0
+        for: 3m
+        labels: {severity: critical}
+        annotations: {summary: 'Kubernetes node {{ $labels.node }} is not Ready'}
+      - alert: DeploymentReplicasUnavailable
+        expr: max by (namespace,deployment) (kube_deployment_status_replicas_available) < max by (namespace,deployment) (kube_deployment_spec_replicas)
+        for: 10m
+        labels: {severity: warning}
+        annotations: {summary: 'Deployment {{ $labels.namespace }}/{{ $labels.deployment }} lacks replicas'}
+      - alert: StatefulSetReplicasUnavailable
+        expr: max by (namespace,statefulset) (kube_statefulset_status_replicas_ready) < max by (namespace,statefulset) (kube_statefulset_replicas)
+        for: 10m
+        labels: {severity: warning}
+        annotations: {summary: 'StatefulSet {{ $labels.namespace }}/{{ $labels.statefulset }} lacks replicas'}
+      - alert: PodCrashLooping
+        expr: max by (namespace,pod,container) (increase(kube_pod_container_status_restarts_total[15m])) > 3
+        for: 5m
+        labels: {severity: warning}
+        annotations: {summary: 'Container {{ $labels.namespace }}/{{ $labels.pod }}/{{ $labels.container }} restarts repeatedly'}
+      - alert: MonitoringReplicaUnavailable
+        expr: count by (app) (up{job="monitoring"} == 1) < 2
+        for: 5m
+        labels: {severity: warning}
+        annotations: {summary: 'Monitoring component {{ $labels.app }} has fewer than two healthy replicas'}
+      - alert: KubernetesStateMetricsUnavailable
+        expr: absent(up{job="kube-state-metrics"} == 1)
+        for: 5m
+        labels: {severity: critical}
+        annotations: {summary: No healthy kube-state-metrics target; workload state alerts cannot be trusted}
+      - alert: NotificationDeliveryNotConfigured
+        expr: vector(1)
+        labels: {severity: info}
+        annotations: {summary: External notification destination is pending; alerts are visible only inside Alertmanager}
+  - name: host-resources
+    rules:
+      - alert: NodeMemoryLow
+        expr: node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes < 0.10
+        for: 10m
+        labels: {severity: warning}
+        annotations: {summary: 'Less than 10 percent available RAM on {{ $labels.node }}'}
+      - alert: NodeCPUHigh
+        expr: 1 - avg by (node) (rate(node_cpu_seconds_total{mode="idle"}[5m])) > 0.90
+        for: 15m
+        labels: {severity: warning}
+        annotations: {summary: 'CPU exceeds 90 percent on {{ $labels.node }}'}
+      - alert: RootFilesystemLow
+        expr: node_filesystem_avail_bytes{mountpoint="/",fstype!~"tmpfs|overlay"} < 21474836480 or node_filesystem_avail_bytes{mountpoint="/",fstype!~"tmpfs|overlay"} / node_filesystem_size_bytes{mountpoint="/",fstype!~"tmpfs|overlay"} < 0.15
+        for: 5m
+        labels: {severity: critical}
+        annotations: {summary: 'Root filesystem reserve is low on {{ $labels.node }}'}
+      - alert: RootInodesLow
+        expr: node_filesystem_files_free{mountpoint="/"} / node_filesystem_files{mountpoint="/"} < 0.10
+        for: 10m
+        labels: {severity: warning}
+        annotations: {summary: 'Root inode reserve is low on {{ $labels.node }}'}
+      - alert: NodeTextfileCollectorError
+        expr: node_textfile_scrape_error != 0
+        for: 3m
+        labels: {severity: warning}
+        annotations: {summary: 'Invalid local textfile metrics on {{ $labels.node }}'}
+      - alert: PrometheusMemoryBudgetHigh
+        expr: process_resident_memory_bytes{job="monitoring",app="prometheus"} > 858993459
+        for: 10m
+        labels: {severity: warning}
+        annotations: {summary: Prometheus RSS exceeds 80 percent of its 1 GiB limit}
+      - alert: PrometheusIngestionLimitExceeded
+        expr: increase(prometheus_target_scrapes_exceeded_sample_limit_total[15m]) > 0
+        labels: {severity: warning}
+        annotations: {summary: Prometheus dropped a scrape because its sample budget was exceeded}
+  - name: etcd-readonly
+    rules:
+      - alert: EtcdMetricsUnavailable
+        expr: up{job="etcd"} == 0
+        for: 3m
+        labels: {severity: critical}
+        annotations: {summary: 'Read-only etcd metrics unavailable on {{ $labels.node }}; this alone does not prove member failure'}
+      - alert: EtcdLeaderMissing
+        expr: etcd_server_has_leader == 0
+        for: 2m
+        labels: {severity: critical}
+        annotations: {summary: 'etcd on {{ $labels.node }} has no leader'}
+      - alert: EtcdFsyncSlow
+        expr: histogram_quantile(0.99, sum by (node,le) (rate(etcd_disk_wal_fsync_duration_seconds_bucket[5m]))) > 0.10
+        for: 10m
+        labels: {severity: warning}
+        annotations: {summary: 'etcd WAL p99 fsync exceeds 100 ms on {{ $labels.node }}'}
+      - alert: EtcdDatabaseQuotaHigh
+        expr: etcd_mvcc_db_total_size_in_bytes / etcd_server_quota_backend_bytes > 0.75
+        for: 15m
+        labels: {severity: warning}
+        annotations: {summary: 'etcd backend exceeds 75 percent of quota on {{ $labels.node }}'}
+      - alert: EtcdLeaderFlapping
+        expr: increase(etcd_server_leader_changes_seen_total[15m]) > 3
+        for: 5m
+        labels: {severity: warning}
+        annotations: {summary: 'Repeated etcd leader changes observed on {{ $labels.node }}'}
+  - name: public-coordination-paths
+    rules:
+      - alert: CoordinationHTTPSProbeFailed
+        expr: probe_success{job=~"headscale-https|derp-.*-https"} == 0
+        for: 3m
+        labels: {severity: critical}
+        annotations: {summary: '{{ $labels.instance }} fails from {{ $labels.probe_node }}'}
+      - alert: CoordinationTLSExpirySoon
+        expr: probe_ssl_earliest_cert_expiry{job=~"headscale-https|derp-.*-https"} - time() < 1209600
+        for: 1h
+        labels: {severity: warning}
+        annotations: {summary: 'Certificate expires within 14 days for {{ $labels.instance }}'}
+  - name: configured-backups-only
+    rules:
+      - alert: ConfiguredBackupFailed
+        expr: (infra_backup_last_attempt_success == 0) and on (instance,component,destination) (infra_backup_configured == 1)
+        for: 1m
+        labels: {severity: critical}
+        annotations: {summary: 'Configured {{ $labels.component }} backup last attempt failed on {{ $labels.node }}'}
+      - alert: ConfiguredBackupStale
+        expr: (time() - infra_backup_last_success_timestamp_seconds > on (instance,component,destination) infra_backup_max_age_seconds) and on (instance,component,destination) (infra_backup_configured == 1)
+        for: 5m
+        labels: {severity: critical}
+        annotations: {summary: 'Configured {{ $labels.component }} backup is older than its allowed age on {{ $labels.node }}'}
+      - alert: ConfiguredBackupMetricsMissing
+        expr: (infra_backup_configured == 1) unless on (instance,component,destination) infra_backup_last_success_timestamp_seconds
+        for: 5m
+        labels: {severity: warning}
+        annotations: {summary: 'Configured {{ $labels.component }} backup has no success timestamp metric'}
+      - alert: ConfiguredStorageBudgetHigh
+        expr: (infra_storage_used_bytes / infra_storage_budget_bytes > 0.80) and on (instance,component,destination) (infra_storage_configured == 1)
+        for: 15m
+        labels: {severity: warning}
+        annotations: {summary: 'Configured {{ $labels.component }} storage exceeds 80 percent of its budget'}

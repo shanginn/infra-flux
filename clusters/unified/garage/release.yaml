@@ -1,0 +1,137 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata: {name: garage}
+spec:
+  interval: 10m
+  timeout: 15m
+  releaseName: garage
+  maxHistory: 3
+  chart:
+    spec:
+      chart: ./script/helm/garage
+      reconcileStrategy: Revision
+      sourceRef: {kind: GitRepository, name: garage-upstream}
+  install:
+    remediation: {retries: 0}
+  upgrade:
+    cleanupOnFail: false
+    remediation: {retries: 0}
+  values:
+    fullnameOverride: garage
+    deployment:
+      kind: StatefulSet
+      replicaCount: 3
+      podManagementPolicy: Parallel
+    image:
+      repository: dxflrs/amd64_garage
+      tag: v2.4.1@sha256:0d7c74fc8ca6fef68a5a941c0e7558c8b1e92ba3588fa7505400e1350456c796
+    initImage:
+      repository: busybox
+      tag: 1.37.0@sha256:bdf57e528e45e4433820e045b29b4597825a1c9e38353532d90a01445013f82e
+    garage:
+      singleNode: false
+      replicationFactor: '3'
+      consistencyMode: consistent
+      existingRpcSecret: garage-runtime
+      kubernetesSkipCrd: true
+      noClusterRole: true
+      garageTomlString: |
+        metadata_dir = "/mnt/meta"
+        data_dir = "/mnt/data"
+        db_engine = "sqlite"
+        metadata_fsync = true
+        data_fsync = true
+        replication_factor = 3
+        consistency_mode = "consistent"
+        block_size = "1M"
+        block_ram_buffer_max = "64MiB"
+        block_max_concurrent_reads = 4
+        block_max_concurrent_writes_per_request = 2
+        compression_level = 1
+        rpc_bind_addr = "0.0.0.0:3901"
+        rpc_secret_file = "/run/garage-secrets/rpcSecret"
+        rpc_public_addr_subnet = "${POD_CIDR}"
+        [kubernetes_discovery]
+        namespace = "garage"
+        service_name = "garage"
+        skip_crd = true
+        [s3_api]
+        api_bind_addr = "0.0.0.0:3900"
+        s3_region = "garage"
+        [admin]
+        api_bind_addr = "0.0.0.0:3903"
+        admin_token_file = "/run/garage-secrets/adminToken"
+        metrics_require_token = false
+      rpcBindAddr: 0.0.0.0:3901
+      admin: {apiBindAddr: '0.0.0.0:3903'}
+      s3:
+        api: {bindAddr: '0.0.0.0:3900', region: garage}
+        web: {bindAddr: '0.0.0.0:3902'}
+    persistence:
+      enabled: true
+      meta: {storageClass: unified-garage-meta, size: 1Gi}
+      data: {storageClass: unified-garage-data, size: 30Gi}
+    service: {type: ClusterIP}
+    ingress:
+      s3:
+        api: {enabled: false}
+        web: {enabled: false}
+    monitoring:
+      metrics:
+        enabled: true
+        serviceMonitor: {enabled: false}
+    podSecurityContext:
+      runAsNonRoot: true
+      runAsUser: 1000
+      runAsGroup: 1000
+      fsGroup: 1000
+      fsGroupChangePolicy: OnRootMismatch
+      seccompProfile: {type: RuntimeDefault}
+    securityContext:
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: true
+      capabilities: {drop: [ALL]}
+    resources:
+      requests: {cpu: 100m, memory: 256Mi}
+      limits: {cpu: '1', memory: 1Gi}
+    livenessProbe:
+      tcpSocket: {port: admin}
+      initialDelaySeconds: 30
+      periodSeconds: 30
+      failureThreshold: 6
+    readinessProbe:
+      httpGet: {path: /health, port: admin}
+      initialDelaySeconds: 5
+      periodSeconds: 10
+      timeoutSeconds: 5
+      failureThreshold: 3
+    affinity:
+      nodeAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          nodeSelectorTerms:
+            - matchExpressions:
+                - {key: infra.shanginn.io/site, operator: In, values: [home, msk, fin]}
+      podAntiAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels: {app.kubernetes.io/name: garage, app.kubernetes.io/instance: garage}
+            topologyKey: kubernetes.io/hostname
+    extraVolumes:
+      - name: runtime-secrets
+        secret: {secretName: garage-runtime, defaultMode: 288}
+    extraVolumeMounts:
+      - {name: runtime-secrets, mountPath: /run/garage-secrets, readOnly: true}
+  postRenderers:
+    - kustomize:
+        patches:
+          - target: {kind: StatefulSet, name: garage}
+            patch: |
+              - op: add
+                path: /spec/template/spec/initContainers/0/resources
+                value:
+                  requests: {cpu: 10m, memory: 8Mi}
+                  limits: {cpu: 100m, memory: 32Mi}
+          - target: {kind: Service, name: 'garage|garage-headless'}
+            patch: |
+              - op: remove
+                path: /spec/ports/1

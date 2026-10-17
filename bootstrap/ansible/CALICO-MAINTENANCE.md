@@ -65,14 +65,34 @@ delete another Pod. The helper requires cleanup and thirty seconds of stable
 three-member/API/Calico health before releasing the lock and moving on.
 
 A failed check stops the sequence and retains the lock. Inspect the private
-record, preimage hashes, replacement Pod UID and disposable Pod before retrying
-the same reviewed invocation. A crash after the intended deletion can resume
-without deleting a second Calico Pod. Incomplete state or an unexpected new
-Pod requires manual review; it is not silently adopted. If the disposable
-probe failed and was cleaned up, preserve the record/evidence and investigate
-before a separately reviewed retry. Never remove a lock solely because a
-timeout expired. There is no automatic restoration of an old kubeconfig,
-which would conflict with Calico's ongoing token updates.
+record, preimage hashes, replacement Pod UID and disposable Pod before retrying.
+The full playbook deliberately refuses inspection on other nodes while one
+node holds the lock. Do not use `--limit` or remove that guard to work around it.
+Resume only the recorded node using the same reviewed helper revision,
+original review object and approved SSH transport. Stream
+`files/calico-endpoint-maintenance.py` to `/usr/bin/python3 -` on that node with
+these arguments (the JSON is one shell-quoted argument):
+
+```text
+apply --node <recorded-node> --ca-sha256 <original-reviewed-CA-SHA256> --review-json <original-per-node-review-JSON>
+```
+
+This is the same guarded `apply` entry point used by Ansible, not a separate
+unlock command. It still checks the exact lock token/UID and all three members'
+health. Once it finishes and releases its own lock, rerun the full playbook
+with the original private variables. A crash after the intended deletion can
+resume without deleting a second Calico Pod. A valid existing completed probe
+is verified and cleaned up by that same invocation.
+
+Incomplete state or an unexpected new Pod requires manual review; it is not
+silently adopted. If the private directory exists without a complete
+`record.json`, preserve it and inspect its ownership, saved files and cluster
+lock before preparing a separately reviewed recovery. If the disposable probe
+failed and was cleaned up, its recorded UID prevents creating another probe
+under the same record; preserve the evidence and investigate before a
+separately reviewed retry. Never remove a lock solely because a timeout
+expired. There is no automatic restoration of an old kubeconfig, which would
+conflict with Calico's ongoing token updates.
 
 This removes the CNI-to-Service-IP startup dependency. It does not guarantee
 a fixed boot time or resolve unrelated etcd, API backoff, routing, DNS or

@@ -63,13 +63,31 @@ manifest or release another operation's lock.
 
 For interruption recovery, inspect the private `record.json` and saved
 `manifest.before.yaml`/`bootstrap.before.json` against their recorded hashes.
-The same reviewed invocation can resume when the manifest matches either its
-saved preimage or exact candidate and all three members are healthy. A partial
-initial backup directory without a complete record requires manual inspection;
-it is never silently adopted. Do not remove a lock merely because a timeout
-expired. If a rollback is needed, review and restore the exact saved manifest
-atomically, then verify all three members before releasing only this recorded
-maintenance token. Keep the preimage and recovery material private.
+The same guarded helper can resume when the manifest matches either its saved
+preimage or exact candidate and all three members are healthy. The full
+playbook deliberately refuses inspection on other nodes while one node holds
+the lock; `--limit` is also rejected. Resume only the recorded node with the
+same reviewed helper revision and approved SSH transport. Stream
+`files/etcd-probe-maintenance.py` to `/usr/bin/python3 -` on that node with the
+original reviewed arguments:
+
+```text
+apply --node <recorded-node> --ca-sha256 <original-reviewed-CA-SHA256> --expected-sha256 <original-reviewed-manifest-SHA256> --threshold 30 --period 10 --timeout 5
+```
+
+Use the originally reviewed threshold/period/timeout if they differ from these
+defaults. This preserves all CA, preimage, token/UID, membership and health
+checks; it is not an unlock or force-recovery mode. After successful completion
+releases this operation's lock, rerun the full playbook with the original
+private variables to continue the sequence.
+
+A partial initial backup directory without a complete record requires manual
+inspection; preserve the directory and inspect its ownership, saved files and
+cluster lock before a separately reviewed recovery. It is never silently
+adopted. Do not remove a lock merely because a timeout expired. If a rollback
+is needed, review and restore the exact saved manifest atomically, then verify
+all three members before releasing only this recorded maintenance token. Keep
+the preimage and recovery material private.
 
 The immutable bootstrap playbook is not rerun or bypassed. A later kubeadm
 upgrade may regenerate the native probes: include this maintenance policy in

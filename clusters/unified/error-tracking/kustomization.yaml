@@ -1,0 +1,26 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: error-tracking
+resources:
+  - namespace.yaml
+  - deployments.yaml
+  - service.yaml
+  - network-policy.yaml
+  - capacity-guard.yaml
+configMapGenerator:
+  - name: glitchtip-config
+    envs: [settings.env]
+  - name: glitchtip-operations
+    files:
+      - operations/infra_settings.py
+      - operations/infra_support.py
+      - operations/migrate.py
+      - operations/bootstrap.py
+      - operations/capacity_guard.py
+      - operations/canary.py
+      - operations/schema_ready.py
+      - operations/storage_check.py
+generatorOptions:
+  # The explicitly created migration Job uses these same stable names.
+  # Bump config-revision on the Deployments after changing mounted code/settings.
+  disableNameSuffixHash: true

@@ -1,0 +1,74 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: glitchtip
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-production
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.priority: '10'
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts: [errors.apps.shanginn.io]
+      secretName: glitchtip-public-tls
+  rules:
+    - host: errors.apps.shanginn.io
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service: {name: glitchtip-web, port: {number: 8000}}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: glitchtip-ingest
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.priority: '50'
+    traefik.ingress.kubernetes.io/router.pathmatcher: PathRegexp
+    traefik.ingress.kubernetes.io/router.middlewares: error-tracking-glitchtip-ingest-rate@kubernetescrd,error-tracking-glitchtip-ingest-global@kubernetescrd,error-tracking-glitchtip-ingest-concurrent@kubernetescrd,error-tracking-glitchtip-ingest-body@kubernetescrd
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts: [errors.apps.shanginn.io]
+      secretName: glitchtip-public-tls
+  rules:
+    - host: errors.apps.shanginn.io
+      http:
+        paths:
+          - path: /api/[0-9]+/(envelope|store|security|minidump)/?$
+            pathType: ImplementationSpecific
+            backend:
+              service: {name: glitchtip-web, port: {number: 8000}}
+          - path: /v1/logs/?$
+            pathType: ImplementationSpecific
+            backend:
+              service: {name: glitchtip-web, port: {number: 8000}}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: glitchtip-private-paths
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.priority: '100'
+    traefik.ingress.kubernetes.io/router.middlewares: error-tracking-glitchtip-private-paths@kubernetescrd
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts: [errors.apps.shanginn.io]
+      secretName: glitchtip-public-tls
+  rules:
+    - host: errors.apps.shanginn.io
+      http:
+        paths:
+          - path: /metrics
+            pathType: Prefix
+            backend:
+              service: {name: glitchtip-web, port: {number: 8000}}
+          - path: /admin
+            pathType: Prefix
+            backend:
+              service: {name: glitchtip-web, port: {number: 8000}}

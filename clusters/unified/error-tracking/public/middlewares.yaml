@@ -1,0 +1,48 @@
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: glitchtip-ingest-rate
+spec:
+  rateLimit:
+    average: 1
+    period: 1s
+    burst: 20
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: glitchtip-ingest-global
+spec:
+  # Per Traefik replica; two ingress nodes can collectively admit twice this.
+  rateLimit:
+    average: 5
+    period: 1s
+    burst: 20
+    sourceCriterion:
+      requestHost: true
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: glitchtip-ingest-body
+spec:
+  buffering:
+    maxRequestBodyBytes: 262144
+    memRequestBodyBytes: 262144
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: glitchtip-ingest-concurrent
+spec:
+  inFlightReq:
+    amount: 10
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: glitchtip-private-paths
+spec:
+  ipAllowList:
+    # No forwarded-header trust here. Public traffic never originates on loopback.
+    sourceRange: [127.0.0.1/32, '::1/128']

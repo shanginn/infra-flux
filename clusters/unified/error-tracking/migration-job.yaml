@@ -1,0 +1,137 @@
+# Explicit create only; excluded from Flux. Keep the completed Job record.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: glitchtip-migrate-6-2-6
+  namespace: error-tracking
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 900
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: glitchtip
+        app.kubernetes.io/component: maintenance
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 45
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 5000
+        runAsGroup: 5000
+        fsGroup: 5000
+        seccompProfile:
+          type: RuntimeDefault
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: infra.shanginn.io/site
+                operator: In
+                values:
+                - msk
+                - fin
+      volumes:
+      - name: operations
+        configMap:
+          name: glitchtip-operations
+      - name: postgres-ca
+        secret:
+          secretName: glitchtip-runtime
+          defaultMode: 292
+          items:
+          - key: ca.crt
+            path: ca.crt
+      - name: tmp
+        emptyDir:
+          sizeLimit: 256Mi
+      - name: uploads
+        emptyDir:
+          sizeLimit: 128Mi
+      - name: bootstrap-admin
+        secret:
+          secretName: glitchtip-bootstrap-admin
+          defaultMode: 292
+          items:
+          - key: email
+            path: email
+          - key: password
+            path: password
+      restartPolicy: Never
+      containers:
+      - name: glitchtip
+        image: glitchtip/glitchtip:6.2.6@sha256:a3d8eb1b36c1e1603d55ab32711ea3dd8115874742a781a57391a62a16e0dff6
+        imagePullPolicy: IfNotPresent
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+        envFrom:
+        - configMapRef:
+            name: glitchtip-config
+        env:
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: glitchtip-runtime
+              key: DATABASE_URL
+        - name: SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: glitchtip-runtime
+              key: SECRET_KEY
+        - name: AWS_ACCESS_KEY_ID
+          valueFrom:
+            secretKeyRef:
+              name: glitchtip-runtime
+              key: AWS_ACCESS_KEY_ID
+        - name: AWS_SECRET_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: glitchtip-runtime
+              key: AWS_SECRET_ACCESS_KEY
+        - name: AWS_STORAGE_BUCKET_NAME
+          valueFrom:
+            secretKeyRef:
+              name: glitchtip-runtime
+              key: AWS_STORAGE_BUCKET_NAME
+        - name: AWS_S3_ENDPOINT_URL
+          valueFrom:
+            secretKeyRef:
+              name: glitchtip-runtime
+              key: AWS_S3_ENDPOINT_URL
+        - name: POD_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        - name: DATABASE_POOL_MAX_SIZE
+          value: '2'
+        volumeMounts:
+        - name: operations
+          mountPath: /opt/infra
+          readOnly: true
+        - name: postgres-ca
+          mountPath: /etc/postgresql
+          readOnly: true
+        - name: tmp
+          mountPath: /tmp
+        - name: uploads
+          mountPath: /code/uploads
+        - name: bootstrap-admin
+          mountPath: /etc/glitchtip-bootstrap
+          readOnly: true
+        command:
+        - python
+        - /opt/infra/migrate.py
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: '1'
+            memory: 1Gi
+            ephemeral-storage: 512Mi

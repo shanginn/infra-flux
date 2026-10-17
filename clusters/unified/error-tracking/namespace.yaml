@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: error-tracking
+  annotations:
+    infra.shanginn.io/managed-by: infra-flux/observability
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
+    infra.shanginn.io/postgresql-client: 'true'
+    infra.shanginn.io/garage-client: 'true'

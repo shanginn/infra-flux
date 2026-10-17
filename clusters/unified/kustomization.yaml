@@ -8,3 +8,4 @@ resources:
   - monitoring
   - garage
   - certificates
+  - error-tracking

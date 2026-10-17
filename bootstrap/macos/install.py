@@ -29,7 +29,7 @@ def main():
     help_text = subprocess.run([binary, 'backup', '--help'], capture_output=True, check=True, text=True).stdout
     require('--stdin-from-command' in help_text, 'This restic version lacks reliable command streaming')
     incoming = json.loads(args.config.read_text())
-    require(incoming['jobs'] and all(job['component'] in ('headscale', 'etcd', 'node-config') for job in incoming['jobs']),
+    require(incoming['jobs'] and all(job['component'] in ('headscale', 'etcd', 'node-config', 'garage', 'postgres') for job in incoming['jobs']),
             'Unsupported exporter')
     repo = Path(incoming['repository']).expanduser().resolve()
     require(repo != Path.home() and not repo.is_relative_to(STATE) and not STATE.is_relative_to(repo),
@@ -62,7 +62,7 @@ def main():
         restic(incoming, ['cat', 'config'])
     destination = STATE / 'bin'
     destination.mkdir(mode=0o700, exist_ok=True)
-    for name in ('backup.py', 'export-headscale.py', 'export-node.py'):
+    for name in ('backup.py', 'export-headscale.py', 'export-node.py', 'garage-stream.py', 'export-postgres.py', 'verify-postgres.py', 'publish-backup-metrics.py'):
         source = Path(__file__).resolve().parent / name
         target = destination / name
         temporary = destination / ('.' + name + '.new')

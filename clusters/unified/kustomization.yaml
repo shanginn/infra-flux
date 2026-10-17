@@ -9,5 +9,6 @@ resources:
   - garage
   - certificates
   - error-tracking
+  - error-tracking/public
   - observability
   - observability/logging

@@ -8,12 +8,19 @@
 
 ```sh
 ansible-playbook cluster.yml -e @/path/to/private-cluster.yml -e @/path/to/private-overlay.yml
+# Домашний узел с GPT swap: сначала inspect, затем после проверки CA/fstab SHA — apply.
+ansible-playbook swap-maintenance.yml -e @/path/to/private-swap.yml
+ansible-playbook swap-maintenance.yml -e @/path/to/private-swap.yml -e unified_swap_maintenance_apply=true
 ansible-playbook monitoring.yml -e monitoring_prepare_enabled=true
 ansible-playbook garage.yml -e @/path/to/private-storage.yml
 ansible-playbook gitops.yml -e @/path/to/private-cluster.yml -e @/path/to/private-overlay.yml -e unified_gitops_enabled=true
 ```
 
 Проверьте имена флагов и обязательные значения соответствующего playbook перед запуском. Подготовка storage не создаёт его workload. [Garage](../../clusters/unified/garage/README.md) требует отдельного первоначального layout после появления трёх работающих контейнеров. PostgreSQL имеет отдельные prepare/activate этапы; его режим fencing выбирается до активации.
+
+Для домашнего узла с GPT swap порядок воспроизведения: первоначальный `cluster.yml` → проверенный [swap-maintenance.yml](SWAP-MAINTENANCE.md) → первая перезагрузка. Простое комментирование swap в `fstab` не подавляет GPT auto-discovery; maintenance сохраняет явную запись `noauto`. Inspect сам не меняет состояние: перед apply передайте проверенные идентификаторы раздела, CA и SHA256 текущего `fstab`.
+
+После завершения первоначальной установки применяйте отдельные maintenance playbook и Flux. Уберите одноразовые `unified_cluster_bootstrap_enabled: true` и `unified_allow_swap_disable: true` из рабочего набора private extra-vars. Не запускайте полный bootstrap как периодический reconcile: его managed `noauto` guard завершает preflight ошибкой даже при `unified_allow_swap_disable=true`, чтобы повторная обработка не закомментировала maintenance-запись. Этот отказ не является запросом удалить marker или вернуть старую настройку swap.
 
 `cluster.yml` предназначен для первоначальных трёх нод, не для upgrade, reset или автоматического ремонта. Он сохраняет CA и fingerprint всей конфигурации, шаблонов и самого playbook. Изменение fingerprint существующей установки требует отдельного проверенного перехода; нельзя удалять маркер или ослаблять проверку, чтобы обойти отказ.
 

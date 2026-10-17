@@ -1,6 +1,6 @@
 # Persistent swap disablement
 
-`swap-maintenance.yml` handles the specific transition from a bootstrap-commented swap entry to an explicit `noauto` entry on the owned home node. It supports the reviewed systemd 257 generator behavior. It does not change `cluster.yml`, its fingerprint, the partition, bootloader, root mounts or kubelet's `failSwapOn: true`.
+`swap-maintenance.yml` handles the specific transition from a bootstrap-commented swap entry to an explicit `noauto` entry on the owned home node. It supports the reviewed systemd 257 generator behavior. Its application does not change the bootstrap ownership marker/fingerprint, the partition, bootloader, root mounts or kubelet's `failSwapOn: true`.
 
 Supply a private vars file with `unified_swap_device`, `unified_swap_uuid` and `unified_swap_partuuid`, all confirmed against the physical swap partition. Run the playbook with these variables to inspect only. It checks ownership and CA, actual swap/GPT identity, absence of a mounted filesystem on the partition, and the exact bootstrap-disabled fstab entry. It reports the fstab SHA256 and candidate SHA256. Keep actual device identities and observations outside Git.
 
@@ -10,4 +10,9 @@ For a repeated apply, inspect again and provide the current fstab SHA256. The en
 
 The official [GPT generator source](https://github.com/systemd/systemd/blob/v257/src/gpt-auto-generator/gpt-auto-generator.c#L320-L375) skips swap discovery whenever fstab contains a swap entry. The [swap unit documentation](https://github.com/systemd/systemd/blob/v257/man/systemd.swap.xml#L108-L120) explains that `noauto` omits its dependency from swap.target. Thus a commented entry alone does not suppress GPT discovery. `noauto` prevents this automatic boot activation; an explicit manual swapon or another unit could still activate swap. Review such dependencies separately instead of weakening kubelet's swap check.
 
-A successful generator reload verifies current configuration. Persistence across reboot requires a separately coordinated reboot and observation of `/proc/swaps`, kubelet readiness and unchanged mounts. The playbook never reboots or claims that this test has occurred. Initial-bootstrap `cluster.yml` intentionally remains unchanged and must not be rerun to undo this transition.
+A successful generator reload verifies current configuration. Persistence across reboot requires a separately coordinated reboot and observation of `/proc/swaps`, kubelet readiness and unchanged mounts. The playbook never reboots or claims that this test has occurred. Initial-bootstrap `cluster.yml` must not be rerun to undo this transition.
+
+
+For a fresh installation on the prepared home node, run initial `cluster.yml`, then inspect/apply this maintenance **before the first reboot**. After initial bootstrap completes, remove its two one-time enable flags from routine private vars and use the dedicated maintenance playbooks/Flux for subsequent changes. This preserves reproducible installation order without treating bootstrap as a steady-state reconciler.
+
+The bootstrap preflight rejects the managed noauto block even when `unified_allow_swap_disable=true`. Its older broad swap replacement would otherwise comment the new entry again and permit GPT auto-discovery. The guard is deliberate: do not remove the block, skip preflight, or restore the old bootstrap just to force a rerun. Updating the bootstrap source changes the computed fingerprint; the existing marker and fingerprint comparison remain unchanged and must not be rewritten or bypassed. Existing nodes continue through separate reviewed maintenance, while a fresh installation records the new source fingerprint.

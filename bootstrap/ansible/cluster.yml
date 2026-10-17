@@ -184,6 +184,8 @@
             swaps=[x.split() for x in pathlib.Path('/proc/swaps').read_text().splitlines()[1:]]
             assert all(int(x[3])==0 for x in swaps), 'Swap is in use; refuse automatic swapoff'
             fstab=pathlib.Path('/etc/fstab').read_text().splitlines()
+            # A later maintenance overlay owns this fstab policy. Bootstrap must not undo it.
+            assert not any(x.strip()=='# BEGIN infra-flux: swap noauto' for x in fstab), ('Persistent swap maintenance is present; cluster.yml is initial bootstrap only. Use swap-maintenance.yml for swap changes; do not replay bootstrap with unified_allow_swap_disable=true.')
             fstab_swaps=[x.split() for x in fstab if x.strip() and not x.lstrip().startswith('#') and len(x.split())>2 and x.split()[2]=='swap']
             print(json.dumps({'active_swap_count':len(swaps),'fstab_swap_count':len(fstab_swaps)}))
           - "{{ unified_pod_cidr }}"

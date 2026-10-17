@@ -1,0 +1,28 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: cert-manager, namespace: cert-manager}
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - ipBlock: {cidr: '${VPN_CIDR}'}
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: kube-system}}
+        - podSelector: {}
+      ports: [{protocol: TCP, port: 10250}]
+    - from:
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: monitoring}}
+      ports: [{protocol: TCP, port: 9402}]
+  egress:
+    - to:
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: kube-system}}
+          podSelector: {matchLabels: {k8s-app: kube-dns}}
+      ports: [{protocol: UDP, port: 53}, {protocol: TCP, port: 53}]
+    - to:
+        - ipBlock: {cidr: 0.0.0.0/0}
+      ports: [{protocol: TCP, port: 443}, {protocol: TCP, port: 80}]
+    - to:
+        - ipBlock: {cidr: '${VPN_CIDR}'}
+      ports: [{protocol: TCP, port: 6443}]
+    - to: [{podSelector: {}}]
+      ports: [{protocol: TCP, port: 10250}]

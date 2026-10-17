@@ -1,0 +1,26 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata: {name: unified-cert-manager, namespace: flux-system}
+spec:
+  interval: 30m
+  retryInterval: 1m
+  timeout: 10m
+  path: ./clusters/unified/certificates/operator
+  prune: true
+  wait: true
+  sourceRef: {kind: GitRepository, name: infra-flux}
+  postBuild:
+    substituteFrom:
+      - {kind: ConfigMap, name: unified-network, optional: false}
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata: {name: unified-certificate-issuers, namespace: flux-system}
+spec:
+  interval: 30m
+  retryInterval: 1m
+  timeout: 5m
+  path: ./clusters/unified/certificates/issuers
+  prune: true
+  dependsOn: [{name: unified-cert-manager}]
+  sourceRef: {kind: GitRepository, name: infra-flux}

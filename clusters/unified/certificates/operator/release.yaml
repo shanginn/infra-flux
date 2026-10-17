@@ -1,0 +1,112 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cert-manager
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: OCIRepository
+metadata: {name: cert-manager, namespace: cert-manager}
+spec:
+  interval: 24h
+  url: oci://quay.io/jetstack/charts/cert-manager
+  ref:
+    digest: sha256:634dce9c13b56677a2c05e2ab76c312d0be2664022d5dd05815da67e1fd5f610
+  layerSelector:
+    mediaType: application/vnd.cncf.helm.chart.content.v1.tar+gzip
+    operation: copy
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata: {name: cert-manager, namespace: cert-manager}
+spec:
+  interval: 30m
+  timeout: 10m
+  chartRef: {kind: OCIRepository, name: cert-manager}
+  install: {remediation: {retries: 2}}
+  upgrade: {remediation: {retries: 2}}
+  values:
+    crds: {enabled: true, keep: true}
+    global:
+      leaderElection: {namespace: cert-manager}
+      rbac: {aggregateClusterRoles: false}
+    replicaCount: 2
+    maxConcurrentChallenges: 4
+    image:
+      tag: v1.21.2
+      digest: sha256:70f532fd9cfde0b09d55687200942399d89838bc2d5d5b45152eb799a15912b8
+    resources:
+      requests: {cpu: 25m, memory: 96Mi}
+      limits: {cpu: 500m, memory: 256Mi}
+    strategy: &strategy
+      type: RollingUpdate
+      rollingUpdate: {maxSurge: 0, maxUnavailable: 1}
+    podDisruptionBudget: {enabled: true, minAvailable: 1}
+    affinity: &affinity
+      nodeAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          nodeSelectorTerms:
+            - matchExpressions:
+                - {key: infra.shanginn.io/site, operator: In, values: [msk, fin]}
+      podAntiAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels: {app.kubernetes.io/instance: cert-manager}
+              matchExpressions:
+                - {key: app.kubernetes.io/component, operator: In, values: [controller]}
+            topologyKey: kubernetes.io/hostname
+    prometheus: {enabled: true, servicemonitor: {enabled: false}}
+    webhook:
+      replicaCount: 2
+      strategy: *strategy
+      image:
+        tag: v1.21.2
+        digest: sha256:a60e2dac46dbb8a7f3df95c54ce941012f54c2fe022f0ee55aaa1ab40ed957ae
+      resources:
+        requests: {cpu: 20m, memory: 64Mi}
+        limits: {cpu: 300m, memory: 128Mi}
+      podDisruptionBudget: {enabled: true, minAvailable: 1}
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - {key: infra.shanginn.io/site, operator: In, values: [msk, fin]}
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels: {app.kubernetes.io/instance: cert-manager, app.kubernetes.io/component: webhook}
+              topologyKey: kubernetes.io/hostname
+    cainjector:
+      replicaCount: 2
+      strategy: *strategy
+      image:
+        tag: v1.21.2
+        digest: sha256:c85268c64f2e0e76684bf5fe8906caff34b82523561c6affe0fae3546bd87562
+      resources:
+        requests: {cpu: 20m, memory: 64Mi}
+        limits: {cpu: 300m, memory: 192Mi}
+      podDisruptionBudget: {enabled: true, minAvailable: 1}
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - {key: infra.shanginn.io/site, operator: In, values: [msk, fin]}
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels: {app.kubernetes.io/instance: cert-manager, app.kubernetes.io/component: cainjector}
+              topologyKey: kubernetes.io/hostname
+    acmesolver:
+      image:
+        tag: v1.21.2
+        digest: sha256:699b40d622211ab7accad8a21b04c5fbaa1841ef7a12621e8de492dbe27b2503
+    startupapicheck:
+      image:
+        tag: v1.21.2
+        digest: sha256:46e75b6866359ffb5d82624f41e3ed1c70b2994982702ced547ce5edb418a8f5
+      resources:
+        requests: {cpu: 10m, memory: 32Mi}
+        limits: {cpu: 100m, memory: 64Mi}

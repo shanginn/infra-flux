@@ -118,6 +118,8 @@ spec:
             topologyKey: kubernetes.io/hostname
     extraVolumes:
       - name: runtime-secrets
+        emptyDir: {medium: Memory, sizeLimit: 1Mi}
+      - name: secret-input
         secret: {secretName: garage-runtime, defaultMode: 288}
     extraVolumeMounts:
       - {name: runtime-secrets, mountPath: /run/garage-secrets, readOnly: true}
@@ -126,6 +128,25 @@ spec:
         patches:
           - target: {kind: StatefulSet, name: garage}
             patch: |
+              - op: replace
+                path: /spec/template/spec/initContainers/0/command
+                value:
+                  - sh
+                  - -ec
+                  - |
+                    umask 077
+                    cat /mnt/garage.toml > /mnt/etc/garage.toml
+                    cp /run/garage-secret-input/rpcSecret /run/garage-secret-output/rpcSecret
+                    cp /run/garage-secret-input/adminToken /run/garage-secret-output/adminToken
+                    chmod 0600 /run/garage-secret-output/rpcSecret /run/garage-secret-output/adminToken
+              - op: remove
+                path: /spec/template/spec/initContainers/0/env
+              - op: add
+                path: /spec/template/spec/initContainers/0/volumeMounts/-
+                value: {name: secret-input, mountPath: /run/garage-secret-input, readOnly: true}
+              - op: add
+                path: /spec/template/spec/initContainers/0/volumeMounts/-
+                value: {name: runtime-secrets, mountPath: /run/garage-secret-output}
               - op: add
                 path: /spec/template/spec/initContainers/0/resources
                 value:

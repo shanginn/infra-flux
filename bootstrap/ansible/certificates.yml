@@ -1,0 +1,21 @@
+---
+- name: Prepare exact control plane sources for the private certificate webhook
+  hosts: control_plane
+  become: true
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - name: Require all three intended control planes
+      ansible.builtin.assert:
+        that:
+          - ansible_play_hosts_all | sort == ['fin', 'home', 'msk']
+          - not ansible_check_mode
+    - name: Derive three exact tunnel addresses from the healthy managed cluster
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/python3
+          - -c
+          - "{{ lookup('ansible.builtin.file', playbook_dir ~ '/files/certificate-network.py', rstrip=False) }}"
+      run_once: true
+      register: certificate_network
+      changed_when: (certificate_network.stdout | from_json).changed

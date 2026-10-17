@@ -7,6 +7,9 @@ spec:
   ingress:
     - from:
         - ipBlock: {cidr: '${VPN_CIDR}'}
+        - ipBlock: {cidr: '${FIN_CONTROL_PLANE_TUNNEL_CIDR}'}
+        - ipBlock: {cidr: '${HOME_CONTROL_PLANE_TUNNEL_CIDR}'}
+        - ipBlock: {cidr: '${MSK_CONTROL_PLANE_TUNNEL_CIDR}'}
         - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: kube-system}}
         - podSelector: {}
       ports: [{protocol: TCP, port: 10250}]

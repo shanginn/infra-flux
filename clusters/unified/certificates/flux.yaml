@@ -12,6 +12,7 @@ spec:
   postBuild:
     substituteFrom:
       - {kind: ConfigMap, name: unified-network, optional: false}
+      - {kind: ConfigMap, name: unified-control-plane-tunnels, optional: false}
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization

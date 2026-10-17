@@ -1,0 +1,47 @@
+server_url: https://{{ headscale_hostname }}
+listen_addr: {{ overlay_ns_service_address.split('/')[0] }}:{{ overlay_tls_port }}
+metrics_listen_addr: 127.0.0.1:9090
+grpc_listen_addr: 127.0.0.1:50443
+grpc_allow_insecure: false
+noise:
+  private_key_path: /var/lib/infra-headscale/noise_private.key
+prefixes:
+  v4: {{ overlay_tailnet_prefix }}
+  allocation: sequential
+derp:
+  server:
+    enabled: false
+  urls: []
+  paths:
+    - {{ overlay_root }}/derp.yaml
+  auto_update_enabled: false
+disable_check_updates: true
+node:
+  expiry: 0
+database:
+  type: sqlite
+  sqlite:
+    path: /var/lib/infra-headscale/db.sqlite
+    write_ahead_log: true
+    wal_autocheckpoint: 1000
+tls_cert_path: /var/lib/infra-headscale/tls/{{ headscale_hostname }}.crt
+tls_key_path: /var/lib/infra-headscale/tls/{{ headscale_hostname }}.key
+log:
+  level: info
+  format: json
+policy:
+  mode: file
+  path: {{ overlay_root }}/policy.json
+dns:
+  magic_dns: false
+  base_domain: ""
+  override_local_dns: false
+  nameservers:
+    global: []
+    split: {}
+  search_domains: []
+  extra_records: []
+unix_socket: /run/infra-headscale/headscale.sock
+unix_socket_permission: "0770"
+logtail:
+  enabled: false

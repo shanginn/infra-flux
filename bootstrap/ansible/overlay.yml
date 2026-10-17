@@ -1,0 +1,555 @@
+---
+- name: Install the external coordinator and private DERP relays
+  hosts: msk:fin
+  become: true
+  gather_facts: true
+  serial: 1
+  any_errors_fatal: true
+  vars_files:
+    - vars/overlay.yml
+
+  pre_tasks:
+    - name: Validate the supported platform and required private settings
+      ansible.builtin.assert:
+        that:
+          - ansible_facts.distribution == 'Debian'
+          - ansible_facts.distribution_major_version == '13'
+          - ansible_facts.architecture == 'x86_64'
+          - inventory_hostname in derp_hosts
+          - headscale_active_host in derp_hosts
+          - overlay_ns_host_address is defined
+          - overlay_ns_service_address is defined
+          - overlay_tailnet_prefix is defined
+          - overlay_acme_email | default('') == '' or overlay_acme_email is match('^[A-Za-z0-9_.+%-]+@[A-Za-z0-9.-]+$')
+          - headscale_hostname is match('^[a-z0-9.-]+$')
+          - derp_hosts[inventory_hostname].hostname is match('^[a-z0-9.-]+$')
+        fail_msg: Supply the required settings through a private extra-vars file.
+
+    - name: Validate isolated namespace addressing
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/python3
+          - -c
+          - |
+            import ipaddress,json,subprocess,sys
+            host,peer=map(ipaddress.ip_interface,sys.argv[1:3])
+            tail=ipaddress.ip_network(sys.argv[3])
+            assert host.version == peer.version == tail.version == 4
+            assert host.network == peer.network and host.ip != peer.ip
+            assert host.network.prefixlen == 30
+            assert host.ip not in (host.network.network_address, host.network.broadcast_address)
+            assert peer.ip not in (peer.network.network_address, peer.network.broadcast_address)
+            assert host.ip.is_private and peer.ip.is_private
+            assert not host.network.overlaps(tail)
+            assert tail.subnet_of(ipaddress.ip_network('100.64.0.0/10'))
+            own_link=sys.argv[4]
+            def check(prefix,dev):
+                if dev == own_link:
+                    return
+                network=ipaddress.ip_network(prefix,strict=False)
+                assert not host.network.overlaps(network), 'Namespace subnet overlaps an existing route or address'
+                if dev != 'tailscale0':
+                    assert not tail.overlaps(network), 'VPN subnet overlaps an existing route or address'
+            routes=json.loads(subprocess.check_output(['ip','-j','-4','route','show','table','all']))
+            for route in routes:
+                destination=route.get('dst','default')
+                if destination != 'default' and destination != '0.0.0.0/0':
+                    check(destination,route.get('dev',''))
+            addresses=json.loads(subprocess.check_output(['ip','-j','-4','address','show']))
+            for interface in addresses:
+                for address in interface.get('addr_info',[]):
+                    check(f"{address['local']}/{address['prefixlen']}",interface['ifname'])
+          - "{{ overlay_ns_host_address }}"
+          - "{{ overlay_ns_service_address }}"
+          - "{{ overlay_tailnet_prefix }}"
+          - "{{ overlay_host_link }}"
+      changed_when: false
+      check_mode: false
+      no_log: true
+
+    - name: Inspect overlay ownership marker
+      ansible.builtin.stat:
+        path: "{{ overlay_marker }}"
+      register: overlay_marker_stat
+
+    - name: Read existing overlay ownership marker
+      ansible.builtin.slurp:
+        src: "{{ overlay_marker }}"
+      register: overlay_marker_raw
+      when: overlay_marker_stat.stat.exists
+
+    - name: Decode overlay ownership marker
+      ansible.builtin.set_fact:
+        overlay_previous: "{{ (overlay_marker_raw.content | b64decode | from_json) if overlay_marker_stat.stat.exists else {} }}"
+        overlay_is_coordinator: "{{ inventory_hostname == headscale_active_host }}"
+
+    - name: Refuse an unknown owner or automatic coordinator role change
+      ansible.builtin.assert:
+        that:
+          - not overlay_marker_stat.stat.exists or overlay_previous.owner | default('') == overlay_owner
+          - not overlay_marker_stat.stat.exists or overlay_previous.coordinator | default(false) == overlay_is_coordinator
+          - not overlay_marker_stat.stat.exists or overlay_previous.namespace_host | default('') == overlay_ns_host_address
+          - not overlay_marker_stat.stat.exists or overlay_previous.namespace_service | default('') == overlay_ns_service_address
+          - not overlay_marker_stat.stat.exists or overlay_previous.tailnet_prefix | default('') == overlay_tailnet_prefix
+        fail_msg: Existing ownership or coordinator role differs; perform a fenced recovery separately.
+
+    - name: Inspect the coordinator activation fence
+      ansible.builtin.stat:
+        path: "{{ overlay_root }}/active-coordinator"
+      register: overlay_active_fence
+
+    - name: Refuse a manually activated standby
+      ansible.builtin.assert:
+        that:
+          - overlay_is_coordinator or not overlay_active_fence.stat.exists
+        fail_msg: This host has been activated separately; refusing to stop or replace its coordinator.
+
+    - name: Inspect existing services before installing packages
+      ansible.builtin.service_facts:
+
+    - name: Refuse unrelated installations of overlay components
+      ansible.builtin.assert:
+        that:
+          - overlay_marker_stat.stat.exists or item not in ansible_facts.services
+        fail_msg: "Existing {{ item }} is not owned by this playbook."
+      loop:
+        - headscale.service
+        - derper.service
+        - haproxy.service
+        - coturn.service
+        - certbot.service
+        - infra-headscale.service
+        - infra-derper.service
+        - infra-overlay-edge.service
+        - infra-stun.service
+
+    - name: Inspect component paths before installing
+      ansible.builtin.stat:
+        path: "{{ item }}"
+        get_checksum: false
+        get_mime: false
+        get_attributes: false
+      loop:
+        - "{{ overlay_root }}"
+        - "{{ overlay_bin }}"
+        - /etc/headscale
+        - /var/lib/headscale
+        - /var/lib/infra-headscale
+        - /var/lib/infra-derper
+        - /etc/letsencrypt
+        - "/run/netns/{{ overlay_netns }}"
+        - "/sys/class/net/{{ overlay_host_link }}"
+      register: overlay_existing_paths
+
+    - name: Refuse adoption of existing component files or network namespace
+      ansible.builtin.assert:
+        that:
+          - overlay_marker_stat.stat.exists or not item.stat.exists
+        fail_msg: "Existing {{ item.item }} is not owned by this playbook."
+      loop: "{{ overlay_existing_paths.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+
+    - name: Check required listening ports before the first installation
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/ss
+          - -H
+          - -lntu
+          - "( sport = :80 or sport = :443 or sport = :3478 or sport = :{{ overlay_derp_port }} or sport = :{{ overlay_acme_port }} )"
+      changed_when: false
+      check_mode: false
+      register: overlay_existing_listeners
+      when: not overlay_marker_stat.stat.exists
+
+    - name: Refuse to take ports used by another service
+      ansible.builtin.assert:
+        that:
+          - overlay_existing_listeners.stdout | default('') | trim | length == 0
+        fail_msg: A required port is already occupied; no service has been stopped.
+      when: not overlay_marker_stat.stat.exists
+
+  tasks:
+    - name: Create the ownership directory
+      ansible.builtin.file:
+        path: /etc/infra-flux
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: Claim the empty installation before package installation
+      ansible.builtin.copy:
+        dest: "{{ overlay_marker }}"
+        content: "{{ {'owner': overlay_owner, 'coordinator': overlay_is_coordinator, 'namespace_host': overlay_ns_host_address, 'namespace_service': overlay_ns_service_address, 'tailnet_prefix': overlay_tailnet_prefix} | to_nice_json }}\n"
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Install pinned official Debian packages without starting their services
+      ansible.builtin.apt:
+        name:
+          - "haproxy={{ overlay_haproxy_version }}"
+          - "certbot={{ overlay_certbot_version }}"
+          - "coturn={{ overlay_coturn_version }}"
+          - "golang-go={{ overlay_golang_version }}"
+          - ca-certificates
+          - iproute2
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+        policy_rc_d: 101
+        fail_on_autoremove: true
+        allow_downgrade: false
+        allow_change_held_packages: true
+
+    - name: Keep stock listeners and broad certificate renewal disabled
+      ansible.builtin.systemd_service:
+        name: "{{ item }}"
+        state: stopped
+        enabled: false
+      loop:
+        - haproxy.service
+        - coturn.service
+        - certbot.timer
+
+    - name: Hold the explicitly pinned service packages
+      ansible.builtin.dpkg_selections:
+        name: "{{ item }}"
+        selection: hold
+      loop:
+        - haproxy
+        - certbot
+        - coturn
+        - golang-go
+
+    - name: Create service and build groups
+      ansible.builtin.group:
+        name: "{{ item }}"
+        system: true
+      loop:
+        - infra-headscale
+        - infra-derper
+        - infra-overlay-build
+
+    - name: Create service and build accounts
+      ansible.builtin.user:
+        name: "{{ item }}"
+        group: "{{ item }}"
+        system: true
+        shell: /usr/sbin/nologin
+        create_home: false
+        home: "{{ '/var/cache/infra-overlay-build' if item == 'infra-overlay-build' else '/var/lib/' + item }}"
+      loop:
+        - infra-headscale
+        - infra-derper
+        - infra-overlay-build
+
+    - name: Create public configuration and challenge directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+      loop:
+        - "{{ overlay_root }}"
+        - "{{ overlay_bin }}"
+        - "{{ overlay_acme_webroot }}"
+        - "{{ overlay_acme_webroot }}/.well-known/acme-challenge"
+        - /etc/letsencrypt/renewal-hooks/deploy
+
+    - name: Create private data directories
+      ansible.builtin.file:
+        path: "/var/lib/{{ item }}"
+        state: directory
+        owner: "{{ item }}"
+        group: "{{ item }}"
+        mode: '0750'
+      loop:
+        - infra-headscale
+        - infra-derper
+
+    - name: Create certificate directories
+      ansible.builtin.file:
+        path: "/var/lib/{{ item }}/tls"
+        state: directory
+        owner: root
+        group: "{{ item }}"
+        mode: '0750'
+      loop:
+        - infra-headscale
+        - infra-derper
+
+    - name: Create an unprivileged Go build cache
+      ansible.builtin.file:
+        path: /var/cache/infra-overlay-build
+        state: directory
+        owner: infra-overlay-build
+        group: infra-overlay-build
+        mode: '0750'
+
+    - name: Download the pinned Headscale binary with SHA256 verification
+      ansible.builtin.get_url:
+        url: "https://github.com/juanfont/headscale/releases/download/v{{ headscale_version }}/headscale_{{ headscale_version }}_linux_amd64"
+        dest: "{{ overlay_bin }}/headscale-{{ headscale_version }}"
+        checksum: "sha256:{{ headscale_binary_sha256 }}"
+        owner: root
+        group: root
+        mode: '0755'
+      notify: Restart active coordinator
+
+    - name: Build the pinned DERP module with a pinned verified Go toolchain
+      become_user: infra-overlay-build
+      become_method: su
+      become_flags: '-s /bin/sh'
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/go
+          - install
+          - -trimpath
+          - "tailscale.com/cmd/derper@v{{ derper_version }}"
+        creates: "/var/cache/infra-overlay-build/bin-{{ derper_version }}/derper"
+      environment:
+        GOPATH: /var/cache/infra-overlay-build/go
+        GOCACHE: /var/cache/infra-overlay-build/cache
+        GOBIN: "/var/cache/infra-overlay-build/bin-{{ derper_version }}"
+        GOTOOLCHAIN: "{{ derper_go_toolchain }}"
+        GOPROXY: https://proxy.golang.org
+        GOSUMDB: sum.golang.org
+        CGO_ENABLED: '0'
+
+    - name: Install the compiled DERP binary
+      ansible.builtin.copy:
+        src: "/var/cache/infra-overlay-build/bin-{{ derper_version }}/derper"
+        remote_src: true
+        dest: "{{ overlay_bin }}/derper-{{ derper_version }}"
+        owner: root
+        group: root
+        mode: '0755'
+      notify: Restart DERP
+
+    - name: Verify the compiled DERP module version
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/go
+          - version
+          - -m
+          - "{{ overlay_bin }}/derper-{{ derper_version }}"
+      register: overlay_derper_build
+      changed_when: false
+      failed_when: overlay_derper_build.rc != 0 or ('tailscale.com' + '\t' + 'v' + derper_version) not in overlay_derper_build.stdout
+
+    - name: Install Headscale and DERP-map configuration
+      ansible.builtin.template:
+        src: "overlay/{{ item }}.j2"
+        dest: "{{ overlay_root }}/{{ item }}"
+        owner: root
+        group: root
+        mode: '0644'
+      loop:
+        - headscale.yaml
+        - derp.yaml
+      notify: Restart active coordinator
+
+    - name: Permit authenticated overlay nodes to communicate
+      ansible.builtin.copy:
+        dest: "{{ overlay_root }}/policy.json"
+        content: |
+          {"acls":[{"action":"accept","src":["*"],"dst":["*:*"]}]}
+        owner: root
+        group: root
+        mode: '0644'
+      notify: Restart active coordinator
+
+    - name: Install namespace setup script
+      ansible.builtin.template:
+        src: overlay/netns.sh.j2
+        dest: "{{ overlay_bin }}/netns-up"
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: Install STUN-only configuration
+      ansible.builtin.template:
+        src: overlay/stun.conf.j2
+        dest: "{{ overlay_root }}/stun.conf"
+        owner: root
+        group: root
+        mode: '0644'
+      notify: Restart STUN
+
+    - name: Install certificate deployment hook
+      ansible.builtin.template:
+        src: overlay/deploy-cert.sh.j2
+        dest: /etc/letsencrypt/renewal-hooks/deploy/infra-overlay
+        owner: root
+        group: root
+        mode: '0750'
+
+    - name: Install service units
+      ansible.builtin.template:
+        src: "overlay/{{ item.template }}.j2"
+        dest: "/etc/systemd/system/{{ item.unit }}"
+        owner: root
+        group: root
+        mode: '0644'
+      loop:
+        - {template: netns.service, unit: infra-headscale-netns.service}
+        - {template: headscale.service, unit: infra-headscale.service}
+        - {template: derper.service, unit: infra-derper.service}
+        - {template: stun.service, unit: infra-stun.service}
+        - {template: acme.service, unit: infra-overlay-acme.service}
+        - {template: edge.service, unit: infra-overlay-edge.service}
+        - {template: renew.service, unit: infra-overlay-renew.service}
+        - {template: renew.timer, unit: infra-overlay-renew.timer}
+      register: overlay_units
+
+    - name: Reload service definitions
+      ansible.builtin.systemd_service:
+        daemon_reload: true
+      when: overlay_units.changed
+
+    - name: Install and validate the SNI and ACME router configuration
+      ansible.builtin.template:
+        src: overlay/haproxy.cfg.j2
+        dest: "{{ overlay_root }}/haproxy.cfg"
+        owner: root
+        group: root
+        mode: '0644'
+        validate: /usr/sbin/haproxy -c -f %s
+      notify: Reload overlay edge
+
+    - name: Start the namespace, challenge server and edge router
+      ansible.builtin.systemd_service:
+        name: "{{ item }}"
+        state: "{{ 'restarted' if overlay_units.results | selectattr('item.unit', 'equalto', item) | selectattr('changed') | list | length > 0 else 'started' }}"
+        enabled: true
+      loop:
+        - infra-headscale-netns.service
+        - infra-overlay-acme.service
+        - infra-overlay-edge.service
+
+    - name: Obtain TLS certificates through the persistent challenge webroot
+      ansible.builtin.command:
+        argv: >-
+          {{ ['/usr/bin/certbot', 'certonly', '--non-interactive', '--agree-tos',
+              '--webroot', '--webroot-path', overlay_acme_webroot,
+              '--cert-name', item, '--domain', item, '--keep-until-expiring']
+             + (['--email', overlay_acme_email] if overlay_acme_email | default('') | length > 0
+                else ['--register-unsafely-without-email']) }}
+        creates: "/etc/letsencrypt/live/{{ item }}/fullchain.pem"
+      loop: "{{ [derp_hosts[inventory_hostname].hostname] + ([headscale_hostname] if overlay_is_coordinator else []) }}"
+
+    - name: Install certificate files for services on first deployment or recovery
+      ansible.builtin.command:
+        argv:
+          - /etc/letsencrypt/renewal-hooks/deploy/infra-overlay
+      environment:
+        RENEWED_LINEAGE: "/etc/letsencrypt/live/{{ item }}"
+      loop: "{{ [derp_hosts[inventory_hostname].hostname] + ([headscale_hostname] if overlay_is_coordinator else []) }}"
+      changed_when: false
+
+    - name: Enable the coordinator only on its designated host
+      ansible.builtin.copy:
+        dest: "{{ overlay_root }}/active-coordinator"
+        content: 'Managed active coordinator\n'
+        owner: root
+        group: root
+        mode: '0644'
+      when: overlay_is_coordinator
+
+    - name: Keep the standby coordinator fenced
+      ansible.builtin.systemd_service:
+        name: infra-headscale.service
+        state: stopped
+        enabled: false
+      when: not overlay_is_coordinator
+
+    - name: Validate Headscale configuration before starting
+      become_user: infra-headscale
+      become_method: su
+      become_flags: '-s /bin/sh'
+      ansible.builtin.command:
+        argv:
+          - "{{ overlay_bin }}/headscale-{{ headscale_version }}"
+          - --config
+          - "{{ overlay_root }}/headscale.yaml"
+          - configtest
+      changed_when: false
+      when: overlay_is_coordinator
+
+    - name: Start the designated coordinator
+      ansible.builtin.systemd_service:
+        name: infra-headscale.service
+        state: "{{ 'restarted' if overlay_units.results | selectattr('item.unit', 'equalto', 'infra-headscale.service') | selectattr('changed') | list | length > 0 else 'started' }}"
+        enabled: true
+      when: overlay_is_coordinator
+
+    - name: Start private DERP, STUN and certificate renewal
+      ansible.builtin.systemd_service:
+        name: "{{ item }}"
+        state: "{{ 'restarted' if overlay_units.results | selectattr('item.unit', 'equalto', item) | selectattr('changed') | list | length > 0 else 'started' }}"
+        enabled: true
+      loop:
+        - infra-derper.service
+        - infra-stun.service
+        - infra-overlay-renew.timer
+
+    - name: Apply pending service configuration changes
+      ansible.builtin.meta: flush_handlers
+
+    - name: Verify the active coordinator over public HTTPS
+      ansible.builtin.uri:
+        url: "https://{{ headscale_hostname }}/health"
+        status_code: 200
+        validate_certs: true
+        follow_redirects: none
+        timeout: 15
+      register: overlay_health
+      retries: 5
+      delay: 3
+      until: overlay_health is succeeded
+      when: overlay_is_coordinator
+
+    - name: Verify DERP TLS through the public SNI router
+      ansible.builtin.uri:
+        url: "https://{{ derp_hosts[inventory_hostname].hostname }}/"
+        status_code: 200
+        validate_certs: true
+        follow_redirects: none
+        timeout: 15
+      register: overlay_derp_health
+      retries: 5
+      delay: 3
+      until: overlay_derp_health is succeeded
+
+    - name: Verify that DERP debug endpoints are denied through the public router
+      ansible.builtin.uri:
+        url: "https://{{ derp_hosts[inventory_hostname].hostname }}/debug/"
+        status_code: 403
+        validate_certs: true
+        follow_redirects: none
+        timeout: 15
+
+  handlers:
+    - name: Restart active coordinator
+      ansible.builtin.systemd_service:
+        name: infra-headscale.service
+        state: restarted
+      when: overlay_is_coordinator
+
+    - name: Restart DERP
+      ansible.builtin.systemd_service:
+        name: infra-derper.service
+        state: restarted
+
+    - name: Restart STUN
+      ansible.builtin.systemd_service:
+        name: infra-stun.service
+        state: restarted
+
+    - name: Reload overlay edge
+      ansible.builtin.systemd_service:
+        name: infra-overlay-edge.service
+        state: reloaded

@@ -1,0 +1,24 @@
+[Unit]
+Description=STUN discovery for DERP
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=turnserver
+Group=turnserver
+ExecStart=/usr/bin/turnserver -c {{ overlay_root }}/stun.conf
+RuntimeDirectory=infra-stun
+RuntimeDirectoryMode=0750
+Restart=on-failure
+RestartSec=5s
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+[Install]
+WantedBy=multi-user.target

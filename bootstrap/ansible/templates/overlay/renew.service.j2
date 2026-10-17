@@ -1,0 +1,11 @@
+[Unit]
+Description=Renew overlay TLS certificates
+After=infra-overlay-edge.service
+Requires=infra-overlay-edge.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/certbot renew --quiet --cert-name {{ derp_hosts[inventory_hostname].hostname }}
+{% if inventory_hostname == headscale_active_host %}
+ExecStart=/usr/bin/certbot renew --quiet --cert-name {{ headscale_hostname }}
+{% endif %}

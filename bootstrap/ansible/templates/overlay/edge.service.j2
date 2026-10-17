@@ -1,0 +1,23 @@
+[Unit]
+Description=Overlay TLS and ACME ingress
+After=network-online.target infra-overlay-acme.service
+Wants=network-online.target infra-overlay-acme.service
+
+[Service]
+Type=notify
+ExecStartPre=/usr/sbin/haproxy -c -f {{ overlay_root }}/haproxy.cfg
+ExecStart=/usr/sbin/haproxy -Ws -f {{ overlay_root }}/haproxy.cfg -p /run/infra-overlay-edge/haproxy.pid
+ExecReload=/usr/sbin/haproxy -c -f {{ overlay_root }}/haproxy.cfg
+ExecReload=/bin/kill -USR2 $MAINPID
+RuntimeDirectory=infra-overlay-edge
+RuntimeDirectoryMode=0750
+Restart=on-failure
+RestartSec=5s
+KillMode=mixed
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/run/infra-overlay-edge
+
+[Install]
+WantedBy=multi-user.target

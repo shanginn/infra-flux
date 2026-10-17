@@ -1,0 +1,29 @@
+#!/bin/sh
+set -eu
+lineage="${RENEWED_LINEAGE:?Certbot must supply RENEWED_LINEAGE}"
+case "$lineage" in
+    /etc/letsencrypt/live/{{ derp_hosts[inventory_hostname].hostname }})
+        destination=/var/lib/infra-derper/tls
+        identity=infra-derper
+        name={{ derp_hosts[inventory_hostname].hostname }}
+        service=infra-derper.service
+        ;;
+{% if inventory_hostname == headscale_active_host %}
+    /etc/letsencrypt/live/{{ headscale_hostname }})
+        destination=/var/lib/infra-headscale/tls
+        identity=infra-headscale
+        name={{ headscale_hostname }}
+        service=infra-headscale.service
+        ;;
+{% endif %}
+    *) exit 0 ;;
+esac
+if cmp -s "$lineage/fullchain.pem" "$destination/$name.crt" &&
+   cmp -s "$lineage/privkey.pem" "$destination/$name.key"; then
+    exit 0
+fi
+install -o root -g "$identity" -m 0640 "$lineage/fullchain.pem" "$destination/$name.crt.new"
+install -o root -g "$identity" -m 0640 "$lineage/privkey.pem" "$destination/$name.key.new"
+mv -f "$destination/$name.crt.new" "$destination/$name.crt"
+mv -f "$destination/$name.key.new" "$destination/$name.key"
+systemctl try-restart "$service"

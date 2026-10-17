@@ -1,0 +1,22 @@
+#!/bin/sh
+set -eu
+ns='{{ overlay_netns }}'
+host_link='{{ overlay_host_link }}'
+peer_link='{{ overlay_peer_link }}'
+if ! ip netns list | awk '{print $1}' | grep -qx "$ns"; then
+    ip netns add "$ns"
+fi
+if ! ip link show "$host_link" >/dev/null 2>&1; then
+    ip link add "$host_link" type veth peer name "$peer_link"
+    ip link set "$peer_link" netns "$ns"
+fi
+ip address replace '{{ overlay_ns_host_address }}' dev "$host_link"
+ip link set "$host_link" up
+ip -n "$ns" address replace '{{ overlay_ns_service_address }}' dev "$peer_link"
+ip -n "$ns" link set lo up
+ip -n "$ns" link set "$peer_link" up
+# The coordinator has no default route, DNS override, forwarding or NAT rule.
+if ip -n "$ns" route show default | grep -q .; then
+    echo 'Unexpected default route in coordinator namespace' >&2
+    exit 1
+fi

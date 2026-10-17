@@ -1,0 +1,34 @@
+---
+headscale_version: 0.29.5
+headscale_binary_sha256: e979d27fe17d924d33bb6ab7504f6338d0635989a0cfdcfbc0ceb637dbcbe980
+derper_version: 1.104.1
+derper_go_toolchain: go1.27.1
+headscale_active_host: fin
+headscale_hostname: vpn.shanginn.io
+derp_hosts:
+  msk:
+    hostname: derp-msk.shanginn.io
+    region_id: 901
+    region_code: msk
+  fin:
+    hostname: derp-fin.shanginn.io
+    region_id: 902
+    region_code: fin
+
+overlay_owner: infra-flux/ansible/overlay
+overlay_marker: /etc/infra-flux/overlay.json
+overlay_netns: infra-headscale
+overlay_host_link: ifhs-host
+overlay_peer_link: ifhs-peer
+overlay_tls_port: 8443
+overlay_derp_port: 8444
+overlay_acme_port: 8081
+overlay_root: /etc/infra-overlay
+overlay_bin: /usr/local/lib/infra-overlay
+overlay_acme_webroot: /var/lib/infra-overlay-acme
+# Supply namespace addresses and the VPN prefix through a private extra-vars file.
+# overlay_acme_email is optional; an empty value creates an ACME account without email.
+overlay_haproxy_version: 3.0.11-1+deb13u3
+overlay_certbot_version: 4.0.0-2+deb13u1
+overlay_coturn_version: 4.6.1-2
+overlay_golang_version: 2:1.24~2

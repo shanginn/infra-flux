@@ -1,0 +1,11 @@
+[Unit]
+Description=Isolated network namespace for Headscale
+Before=infra-headscale.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart={{ overlay_bin }}/netns-up
+
+[Install]
+WantedBy=multi-user.target

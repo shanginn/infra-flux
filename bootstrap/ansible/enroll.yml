@@ -1,0 +1,201 @@
+---
+- name: Enroll managed nodes into the private Headscale network
+  hosts: unified
+  become: true
+  gather_facts: false
+  serial: 1
+  any_errors_fatal: true
+  vars_files:
+    - vars/overlay.yml
+  vars:
+    enrollment_user: infra
+    enrollment_key_expiry: 10m
+    enrollment_login_server: "https://{{ headscale_hostname }}"
+    enrollment_hostname: "k8s-{{ site }}"
+
+  pre_tasks:
+    - name: Require a supported node and private VPN prefix
+      ansible.builtin.assert:
+        that:
+          - site is defined
+          - site is match('^[a-z0-9-]+$')
+          - overlay_tailnet_prefix is defined
+          - headscale_active_host in hostvars
+
+    - name: Read the node preparation ownership marker
+      ansible.builtin.slurp:
+        src: /etc/infra-flux/phase1.json
+      register: enrollment_owner_raw
+
+    - name: Refuse a client not installed by the preparation playbook
+      ansible.builtin.assert:
+        that:
+          - (enrollment_owner_raw.content | b64decode | from_json).managed_by == 'infra-flux/ansible/phase1'
+        fail_msg: This client is not owned by the node preparation playbook.
+
+    - name: Read current client status
+      ansible.builtin.command:
+        argv: [/usr/bin/tailscale, status, --json]
+      register: enrollment_status_raw
+      changed_when: false
+      check_mode: false
+      no_log: true
+
+    - name: Read current client preferences
+      ansible.builtin.command:
+        argv: [/usr/bin/tailscale, debug, prefs]
+      register: enrollment_prefs_raw
+      changed_when: false
+      check_mode: false
+      no_log: true
+
+    - name: Decode client state without storing it in the fact cache
+      ansible.builtin.set_fact:
+        enrollment_status: "{{ enrollment_status_raw.stdout | from_json }}"
+        enrollment_prefs: "{{ enrollment_prefs_raw.stdout | from_json }}"
+        cacheable: false
+      no_log: true
+
+    - name: Refuse stopped or otherwise unexpected client states
+      ansible.builtin.assert:
+        that:
+          - enrollment_status.BackendState in ['NeedsLogin', 'NoState', 'Running']
+          - not enrollment_prefs.RunSSH | default(false)
+          - enrollment_prefs.AdvertiseRoutes | default([], true) | length == 0
+        fail_msg: The client has existing non-default state; enrollment will not reset it.
+      no_log: true
+
+    - name: Verify an already registered client without reconfiguring it
+      ansible.builtin.include_tasks: tasks/check-enrollment.yml
+      when: enrollment_status.BackendState == 'Running'
+
+  tasks:
+    - name: Register a client that still needs login
+      when: enrollment_status.BackendState in ['NeedsLogin', 'NoState']
+      no_log: true
+      block:
+        - name: Find the infrastructure user on the active coordinator
+          delegate_to: "{{ headscale_active_host }}"
+          ansible.builtin.command:
+            argv:
+              - "{{ overlay_bin }}/headscale-{{ headscale_version }}"
+              - --config
+              - "{{ overlay_root }}/headscale.yaml"
+              - users
+              - list
+              - --name
+              - "{{ enrollment_user }}"
+              - --output
+              - json
+          register: enrollment_users_raw
+          changed_when: false
+
+        - name: Decode matching users
+          ansible.builtin.set_fact:
+            enrollment_users: "{{ enrollment_users_raw.stdout | from_json | default([], true) }}"
+            cacheable: false
+
+        - name: Require at most one matching infrastructure user
+          ansible.builtin.assert:
+            that:
+              - enrollment_users | length <= 1
+
+        - name: Create the infrastructure user if absent
+          delegate_to: "{{ headscale_active_host }}"
+          ansible.builtin.command:
+            argv:
+              - "{{ overlay_bin }}/headscale-{{ headscale_version }}"
+              - --config
+              - "{{ overlay_root }}/headscale.yaml"
+              - users
+              - create
+              - "{{ enrollment_user }}"
+              - --output
+              - json
+          register: enrollment_created_user
+          when: enrollment_users | length == 0
+
+        - name: Select the infrastructure user ID
+          ansible.builtin.set_fact:
+            enrollment_user_id: "{{ enrollment_users[0].id if enrollment_users | length == 1 else (enrollment_created_user.stdout | from_json).id }}"
+            cacheable: false
+
+        - name: Create a short-lived single-use registration key
+          delegate_to: "{{ headscale_active_host }}"
+          ansible.builtin.command:
+            argv:
+              - "{{ overlay_bin }}/headscale-{{ headscale_version }}"
+              - --config
+              - "{{ overlay_root }}/headscale.yaml"
+              - preauthkeys
+              - create
+              - --user
+              - "{{ enrollment_user_id | string }}"
+              - --expiration
+              - "{{ enrollment_key_expiry }}"
+              - --reusable=false
+              - --ephemeral=false
+              - --output
+              - json
+          register: enrollment_key_raw
+
+        - name: Validate the registration key response
+          ansible.builtin.assert:
+            that:
+              - (enrollment_key_raw.stdout | from_json).key | length >= 20
+              - (enrollment_key_raw.stdout | from_json).id | int > 0
+
+        - name: Allocate a private temporary key file on the node
+          ansible.builtin.tempfile:
+            state: file
+            path: /root
+            prefix: infra-headscale-auth-
+          register: enrollment_key_file
+
+        - name: Write the key with root-only permissions
+          ansible.builtin.copy:
+            dest: "{{ enrollment_key_file.path }}"
+            content: "{{ (enrollment_key_raw.stdout | from_json).key }}\n"
+            owner: root
+            group: root
+            mode: '0600'
+
+        - name: Connect the client without changing DNS, advertised routes or SSH
+          ansible.builtin.command:
+            argv:
+              - /usr/bin/tailscale
+              - up
+              - "--login-server={{ enrollment_login_server }}"
+              - "--auth-key=file:{{ enrollment_key_file.path }}"
+              - --accept-dns=false
+              - --accept-routes=false
+              - "--hostname={{ enrollment_hostname }}"
+              - --timeout=90s
+
+      always:
+        - name: Remove the temporary key file even if registration failed
+          ansible.builtin.file:
+            path: "{{ enrollment_key_file.path }}"
+            state: absent
+          when: enrollment_key_file is defined and enrollment_key_file.path is defined
+
+        - name: Expire this registration key after the attempt
+          delegate_to: "{{ headscale_active_host }}"
+          ansible.builtin.command:
+            argv:
+              - "{{ overlay_bin }}/headscale-{{ headscale_version }}"
+              - --config
+              - "{{ overlay_root }}/headscale.yaml"
+              - preauthkeys
+              - expire
+              - --id
+              - "{{ (enrollment_key_raw.stdout | from_json).id | string }}"
+          when: enrollment_key_raw is defined and enrollment_key_raw.rc | default(1) == 0
+
+    - name: Read and verify the final client identity
+      ansible.builtin.include_tasks: tasks/check-enrollment.yml
+      when: enrollment_status.BackendState != 'Running'
+
+    - name: Confirm registration without displaying keys or network addresses
+      ansible.builtin.debug:
+        msg: "{{ inventory_hostname }} is registered with the configured coordinator and persistent node name."

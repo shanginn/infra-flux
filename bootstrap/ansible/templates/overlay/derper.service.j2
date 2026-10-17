@@ -1,0 +1,25 @@
+[Unit]
+Description=Private DERP relay
+After=network-online.target tailscaled.service
+Wants=network-online.target tailscaled.service
+
+[Service]
+User=infra-derper
+Group=infra-derper
+ExecStart={{ overlay_bin }}/derper-{{ derper_version }} -a 127.0.0.1:{{ overlay_derp_port }} -http-port=-1 -stun=false -hostname={{ derp_hosts[inventory_hostname].hostname }} -certmode=manual -certdir=/var/lib/infra-derper/tls -c=/var/lib/infra-derper/derper.key -verify-clients -socket=/run/tailscale/tailscaled.sock -home=blank
+StateDirectory=infra-derper
+StateDirectoryMode=0750
+UMask=0077
+Restart=on-failure
+RestartSec=5s
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+[Install]
+WantedBy=multi-user.target

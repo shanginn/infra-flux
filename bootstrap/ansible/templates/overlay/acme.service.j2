@@ -1,0 +1,17 @@
+[Unit]
+Description=HTTP-01 challenge webroot
+After=network.target
+
+[Service]
+User=nobody
+Group=nogroup
+ExecStart=/usr/bin/python3 -m http.server {{ overlay_acme_port }} --bind 127.0.0.1 --directory {{ overlay_acme_webroot }}
+Restart=on-failure
+RestartSec=5s
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

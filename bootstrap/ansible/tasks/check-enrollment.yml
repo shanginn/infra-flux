@@ -1,0 +1,48 @@
+---
+- name: Read the client status for identity verification
+  ansible.builtin.command:
+    argv: [/usr/bin/tailscale, status, --json]
+  register: enrollment_verified_status
+  changed_when: false
+  check_mode: false
+  no_log: true
+
+- name: Read the client preferences for identity verification
+  ansible.builtin.command:
+    argv: [/usr/bin/tailscale, debug, prefs]
+  register: enrollment_verified_prefs
+  changed_when: false
+  check_mode: false
+  no_log: true
+
+- name: Require the configured coordinator and persistent node name
+  ansible.builtin.assert:
+    that:
+      - (enrollment_verified_status.stdout | from_json).BackendState == 'Running'
+      - (enrollment_verified_prefs.stdout | from_json).ControlURL | regex_replace('/+$', '') == enrollment_login_server
+      - (enrollment_verified_prefs.stdout | from_json).Hostname == enrollment_hostname
+      - not (enrollment_verified_prefs.stdout | from_json).CorpDNS
+      - not (enrollment_verified_prefs.stdout | from_json).RouteAll
+      - not (enrollment_verified_prefs.stdout | from_json).RunSSH | default(false)
+      - (enrollment_verified_prefs.stdout | from_json).AdvertiseRoutes | default([], true) | length == 0
+    fail_msg: The registered client has different identity or networking settings; it was not reset.
+  no_log: true
+
+- name: Require an allocated address inside the configured VPN prefix
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/python3
+      - -c
+      - |
+        import ipaddress,json,sys
+        prefix=ipaddress.ip_network(sys.argv[1])
+        assert prefix.version == 4 and prefix.subnet_of(ipaddress.ip_network('100.64.0.0/10'))
+        status=json.load(sys.stdin)
+        addresses=[ipaddress.ip_address(value) for value in status.get('TailscaleIPs',[])]
+        v4=[address for address in addresses if address.version == 4]
+        assert v4 and all(address in prefix for address in v4)
+      - "{{ overlay_tailnet_prefix }}"
+    stdin: "{{ enrollment_verified_status.stdout }}"
+  changed_when: false
+  check_mode: false
+  no_log: true

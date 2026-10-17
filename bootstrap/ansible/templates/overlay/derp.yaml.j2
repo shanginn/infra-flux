@@ -1,0 +1,15 @@
+regions:
+{% for name, region in derp_hosts.items() %}
+  {{ region.region_id }}:
+    regionid: {{ region.region_id }}
+    regioncode: {{ region.region_code }}
+    regionname: {{ region.region_code }}
+    nodes:
+      - name: {{ region.region_code }}-1
+        regionid: {{ region.region_id }}
+        hostname: {{ region.hostname }}
+        derpport: 443
+        ipv6: none
+        stunport: 3478
+        canport80: false
+{% endfor %}

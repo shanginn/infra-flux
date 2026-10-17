@@ -1,0 +1,44 @@
+global
+    maxconn 2048
+    log stdout format raw local0
+    user haproxy
+    group haproxy
+    stats socket /run/infra-overlay-edge/admin.sock mode 600 level admin
+
+defaults
+    log global
+    timeout connect 10s
+    timeout client 1h
+    timeout server 1h
+
+frontend public_http
+    bind :80
+    mode http
+    acl acme_challenge path_beg /.well-known/acme-challenge/
+    use_backend acme if acme_challenge
+    http-request redirect scheme https code 301 unless acme_challenge
+
+backend acme
+    mode http
+    server webroot 127.0.0.1:{{ overlay_acme_port }}
+
+frontend public_tls
+    bind :443
+    mode tcp
+    tcp-request inspect-delay 5s
+    tcp-request content accept if { req.ssl_hello_type 1 }
+    use_backend derp if { req.ssl_sni -i {{ derp_hosts[inventory_hostname].hostname }} }
+    use_backend headscale if { req.ssl_sni -i {{ headscale_hostname }} }
+    default_backend reject_tls
+
+backend derp
+    mode tcp
+    server derper 127.0.0.1:{{ overlay_derp_port }} check source {{ ansible_facts.default_ipv4.address }}
+
+backend headscale
+    mode tcp
+    server coordinator {{ overlay_ns_service_address.split('/')[0] }}:{{ overlay_tls_port }} check
+
+backend reject_tls
+    mode tcp
+    tcp-request content reject

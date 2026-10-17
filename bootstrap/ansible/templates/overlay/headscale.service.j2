@@ -1,0 +1,30 @@
+[Unit]
+Description=Headscale coordinator
+After=infra-headscale-netns.service
+Requires=infra-headscale-netns.service
+ConditionPathExists={{ overlay_root }}/active-coordinator
+
+[Service]
+User=infra-headscale
+Group=infra-headscale
+NetworkNamespacePath=/run/netns/{{ overlay_netns }}
+ExecStart={{ overlay_bin }}/headscale-{{ headscale_version }} --config {{ overlay_root }}/headscale.yaml serve
+WorkingDirectory=/var/lib/infra-headscale
+StateDirectory=infra-headscale
+StateDirectoryMode=0750
+RuntimeDirectory=infra-headscale
+RuntimeDirectoryMode=0750
+UMask=0077
+Restart=on-failure
+RestartSec=5s
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+[Install]
+WantedBy=multi-user.target

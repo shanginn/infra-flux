@@ -54,6 +54,23 @@
         mode: '0600'
         content: "{{ {'owner': 'infra-flux/ansible/gitops', 'cluster_uid': unified_gitops_identity.stdout | trim} | to_nice_json }}\n"
 
+    - name: Read the current Calico packet mark allocation
+      ansible.builtin.command:
+        argv: [kubectl, --kubeconfig=/etc/kubernetes/admin.conf, get, felixconfiguration, default, -o, json]
+      register: unified_felix_current
+      changed_when: false
+
+    - name: Refuse an unrelated custom mark allocation
+      ansible.builtin.assert:
+        that:
+          - (unified_felix_current.stdout | from_json).spec.iptablesMarkMask | default(4278190080) | int == 4278190080
+
+    - name: Separate Calico marks from Tailscale before starting GitOps controllers
+      ansible.builtin.command:
+        argv: [kubectl, --kubeconfig=/etc/kubernetes/admin.conf, apply, --server-side, --field-manager=infra-flux-bootstrap, -f, '-']
+        stdin: "{{ lookup('ansible.builtin.file', playbook_dir + '/../../clusters/unified/networking/felix.yaml') }}"
+      changed_when: false
+
     - name: Render the pinned and reviewed Flux installation on the controller
       ansible.builtin.command:
         argv: [kubectl, kustomize, "{{ playbook_dir }}/../../clusters/unified/flux-system"]

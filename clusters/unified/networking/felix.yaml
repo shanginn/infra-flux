@@ -1,0 +1,8 @@
+apiVersion: crd.projectcalico.org/v1
+kind: FelixConfiguration
+metadata:
+  name: default
+spec:
+  # Eight bits outside Tailscale's 0x00ff0000 and kube-proxy's marks.
+  # Calico's default overlaps the Tailscale policy-routing bypass mark.
+  iptablesMarkMask: 4278190080 # 0xff000000

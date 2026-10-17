@@ -53,7 +53,7 @@ limits_config:
   max_label_value_length: 256
   max_streams_per_user: 500
   max_global_streams_per_user: 500
-  per_stream_rate_limit: 8KB
+  per_stream_rate_limit: 20KB
   per_stream_rate_limit_burst: 256KB
   max_query_lookback: 48h
   max_query_length: 48h

@@ -23,6 +23,142 @@ alerting:
         - {source_labels: [__meta_kubernetes_pod_container_port_name], regex: http, action: keep}
         - {source_labels: [__meta_kubernetes_pod_ready], regex: 'true', action: keep}
 scrape_configs:
+  - job_name: apiserver
+    target_limit: 3
+    scheme: https
+    authorization:
+      credentials_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+    tls_config:
+      ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+    kubernetes_sd_configs: [{role: node}]
+    relabel_configs:
+      - {source_labels: [__meta_kubernetes_node_labelpresent_node_role_kubernetes_io_control_plane], regex: 'true', action: keep}
+      - {source_labels: [__meta_kubernetes_node_name], target_label: node}
+      - {source_labels: [__meta_kubernetes_node_address_InternalIP], target_label: __address__, replacement: '$1:6443'}
+    metric_relabel_configs:
+      - source_labels: [__name__]
+        regex: 'apiserver_request_total|apiserver_request_duration_seconds_.*|apiserver_current_inflight_requests|apiserver_current_inqueue_requests|apiserver_storage_objects|apiserver_admission_webhook_rejection_count|apiserver_tls_handshake_errors_total|apiserver_client_certificate_expiration_seconds_.*|process_.*|go_goroutines'
+        action: keep
+  - job_name: kubelet
+    target_limit: 3
+    scheme: https
+    authorization:
+      credentials_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+    tls_config:
+      ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+    kubernetes_sd_configs: [{role: node}]
+    relabel_configs:
+      - {source_labels: [__meta_kubernetes_node_name], target_label: node}
+      - {source_labels: [__meta_kubernetes_node_address_InternalIP], target_label: __address__, replacement: '$1:10250'}
+    metric_relabel_configs:
+      - source_labels: [__name__]
+        regex: 'kubelet_node_name|kubelet_running_.*|kubelet_runtime_operations_.*|kubelet_pod_start_duration_seconds_.*|kubelet_pleg_relist_duration_seconds_.*|kubelet_pleg_last_seen_seconds|kubelet_volume_stats_.*|kubelet_certificate_manager_.*|kubelet_server_expiration_renew_errors|rest_client_requests_total|process_.*|go_goroutines'
+        action: keep
+  - job_name: cadvisor
+    target_limit: 3
+    sample_limit: 15000
+    scheme: https
+    metrics_path: /metrics/cadvisor
+    authorization:
+      credentials_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+    tls_config:
+      ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+    kubernetes_sd_configs: [{role: node}]
+    relabel_configs:
+      - {source_labels: [__meta_kubernetes_node_name], target_label: node}
+      - {source_labels: [__meta_kubernetes_node_address_InternalIP], target_label: __address__, replacement: '$1:10250'}
+    metric_relabel_configs:
+      - {source_labels: [namespace], regex: '.+', action: keep}
+      - source_labels: [__name__]
+        regex: 'container_cpu_usage_seconds_total|container_cpu_cfs_periods_total|container_cpu_cfs_throttled_periods_total|container_cpu_cfs_throttled_seconds_total|container_memory_working_set_bytes|container_memory_rss|container_memory_cache|container_memory_swap|container_fs_usage_bytes|container_fs_limit_bytes|container_fs_reads_bytes_total|container_fs_writes_bytes_total|container_network_receive_bytes_total|container_network_transmit_bytes_total|container_network_receive_errors_total|container_network_transmit_errors_total|container_network_receive_packets_dropped_total|container_network_transmit_packets_dropped_total|container_oom_events_total|container_start_time_seconds'
+        action: keep
+      - {action: labeldrop, regex: 'image|container_label_.*'}
+  - job_name: coredns
+    target_limit: 6
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces: {names: [kube-system]}
+    relabel_configs:
+      - {source_labels: [__meta_kubernetes_pod_label_k8s_app], regex: kube-dns, action: keep}
+      - {source_labels: [__meta_kubernetes_pod_container_port_name], regex: metrics, action: keep}
+      - {source_labels: [__meta_kubernetes_pod_name], target_label: pod}
+      - {source_labels: [__meta_kubernetes_pod_node_name], target_label: node}
+    metric_relabel_configs:
+      - source_labels: [__name__]
+        regex: 'coredns_dns_.*|coredns_cache_.*|coredns_proxy_.*|coredns_forward_.*|coredns_panics_total|coredns_reload_failed_total|process_.*|go_goroutines'
+        action: keep
+  - job_name: traefik
+    target_limit: 4
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces: {names: [ingress-system]}
+    relabel_configs:
+      - {source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_name], regex: traefik, action: keep}
+      - {source_labels: [__meta_kubernetes_pod_container_port_name], regex: metrics, action: keep}
+      - {source_labels: [__meta_kubernetes_pod_name], target_label: pod}
+      - {source_labels: [__meta_kubernetes_pod_node_name], target_label: node}
+    metric_relabel_configs:
+      - source_labels: [__name__]
+        regex: 'traefik_entrypoint_.*|traefik_service_.*|traefik_tls_certs_not_after|traefik_config_.*|process_.*|go_goroutines'
+        action: keep
+  - job_name: application-metrics
+    # Explicit opt-in, one named metrics port and fixed path; annotations cannot redirect requests.
+    target_limit: 64
+    sample_limit: 5000
+    body_size_limit: 5MB
+    kubernetes_sd_configs: [{role: pod}]
+    relabel_configs:
+      - {source_labels: [__meta_kubernetes_pod_label_infra_shanginn_io_metrics], regex: 'true', action: keep}
+      - {source_labels: [__meta_kubernetes_pod_container_port_name], regex: metrics, action: keep}
+      - {source_labels: [__meta_kubernetes_pod_phase], regex: 'Pending|Running', action: keep}
+      - {source_labels: [__meta_kubernetes_namespace], target_label: namespace}
+      - {source_labels: [__meta_kubernetes_pod_name], target_label: pod}
+      - {source_labels: [__meta_kubernetes_pod_node_name], target_label: node}
+      - {source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_name], target_label: app}
+  - job_name: cert-manager
+    target_limit: 6
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces: {names: [cert-manager]}
+    relabel_configs:
+      - {source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_instance], regex: cert-manager, action: keep}
+      - {source_labels: [__meta_kubernetes_pod_container_port_number], regex: '9402', action: keep}
+      - {source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_component], target_label: component}
+      - {source_labels: [__meta_kubernetes_pod_name], target_label: pod}
+    metric_relabel_configs:
+      - {source_labels: [__name__], regex: 'certmanager_.*|controller_runtime_.*|workqueue_.*|process_.*|go_goroutines', action: keep}
+  - job_name: glitchtip
+    target_limit: 4
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces: {names: [error-tracking]}
+    relabel_configs:
+      - {source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_name], regex: glitchtip, action: keep}
+      - {source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_component, __meta_kubernetes_pod_container_port_number], regex: 'web;8000|worker;9000', action: keep}
+      - {source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_component], target_label: component}
+      - {source_labels: [__meta_kubernetes_pod_name], target_label: pod}
+  - job_name: logging
+    target_limit: 4
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces: {names: [logging]}
+    relabel_configs:
+      - {source_labels: [__meta_kubernetes_pod_label_app], regex: 'loki|alloy', action: keep}
+      - {source_labels: [__meta_kubernetes_pod_container_port_number], regex: '3100|12345', action: keep}
+      - {source_labels: [__meta_kubernetes_pod_label_app], target_label: app}
+      - {source_labels: [__meta_kubernetes_pod_node_name], target_label: node}
+    metric_relabel_configs:
+      - {source_labels: [__name__], regex: 'loki_.*|promtail_.*|alloy_.*|loki_write_.*|process_.*|go_goroutines', action: keep}
+  - job_name: kube-state-metrics-self
+    target_limit: 2
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces: {names: [monitoring]}
+    relabel_configs:
+      - {source_labels: [__meta_kubernetes_pod_label_app], regex: kube-state-metrics, action: keep}
+      - {source_labels: [__meta_kubernetes_pod_container_port_name], regex: telemetry, action: keep}
+    metric_relabel_configs:
+      - {source_labels: [__name__], regex: 'kube_state_metrics_.*|process_.*|go_goroutines', action: keep}
   - job_name: public-dns
     target_limit: 4
     kubernetes_sd_configs:
@@ -70,7 +206,7 @@ scrape_configs:
       - {source_labels: [__meta_kubernetes_node_name], target_label: node}
     metric_relabel_configs:
       - source_labels: [__name__]
-        regex: 'etcd_server_has_leader|etcd_server_leader_changes_seen_total|etcd_server_proposals_failed_total|etcd_server_proposals_pending|etcd_disk_wal_fsync_duration_seconds_.*|etcd_disk_backend_commit_duration_seconds_.*|etcd_mvcc_db_total_size_in_bytes|etcd_server_quota_backend_bytes|etcd_network_peer_round_trip_time_seconds_.*|process_resident_memory_bytes'
+        regex: 'etcd_server_has_leader|etcd_server_leader_changes_seen_total|etcd_server_proposals_failed_total|etcd_server_proposals_pending|etcd_server_proposals_committed_total|etcd_server_proposals_applied_total|etcd_network_peer_sent_failures_total|etcd_disk_wal_fsync_duration_seconds_.*|etcd_disk_backend_commit_duration_seconds_.*|etcd_mvcc_db_total_size_in_bytes|etcd_server_quota_backend_bytes|etcd_network_peer_round_trip_time_seconds_.*|process_resident_memory_bytes'
         action: keep
   - job_name: kube-state-metrics
     kubernetes_sd_configs:

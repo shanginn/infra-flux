@@ -278,3 +278,194 @@ groups:
         for: 15m
         labels: {severity: warning}
         annotations: {summary: 'Configured {{ $labels.component }} storage exceeds 80 percent of its budget'}
+  - name: kubernetes-resource-recording
+    rules:
+      - record: namespace_pod_container:cpu_usage_cores:rate5m
+        expr: sum by (namespace,pod,container) (rate(container_cpu_usage_seconds_total{job="cadvisor",container!="",container!="POD"}[5m]))
+      - record: namespace_pod_container:memory_working_set_bytes
+        expr: max by (namespace,pod,container) (container_memory_working_set_bytes{job="cadvisor",container!="",container!="POD"})
+      - record: namespace:cpu_usage_cores:sum
+        expr: sum by (namespace) (namespace_pod_container:cpu_usage_cores:rate5m)
+      - record: namespace:memory_working_set_bytes:sum
+        expr: sum by (namespace) (namespace_pod_container:memory_working_set_bytes)
+      - record: node_resource:container_requests:sum
+        expr: sum by (node,resource) (max by (namespace,pod,container,node,resource) (kube_pod_container_resource_requests))
+      - record: node_resource:container_limits:sum
+        expr: sum by (node,resource) (max by (namespace,pod,container,node,resource) (kube_pod_container_resource_limits))
+  - name: kubernetes-metrics-and-tls
+    rules:
+      - alert: KubeletMetricsUnavailable
+        expr: up{job=~"kubelet|cadvisor"} == 0
+        for: 5m
+        labels: {severity: warning}
+        annotations: {summary: 'Verified kubelet metrics unavailable on {{ $labels.node }}; inspect TLS/CSR and authorization'}
+      - alert: APIServerMetricsUnavailable
+        expr: up{job="apiserver"} == 0
+        for: 5m
+        labels: {severity: warning}
+        annotations: {summary: 'API metrics unavailable on {{ $labels.node }}'}
+      - alert: KubeletServingCertificateExpiresSoon
+        expr: kubelet_certificate_manager_server_ttl_seconds < 1209600
+        for: 1h
+        labels: {severity: warning}
+        annotations: {summary: 'Serving TLS on {{ $labels.node }} expires within 14 days; inspect and explicitly approve its exact renewal CSR'}
+      - alert: KubeletServingCertificateCritical
+        expr: kubelet_certificate_manager_server_ttl_seconds < 172800
+        for: 10m
+        labels: {severity: critical}
+        annotations: {summary: 'Serving TLS on {{ $labels.node }} expires within two days'}
+      - alert: KubeletServingCSRPending
+        expr: (time() - max by (certificatesigningrequest,signer_name) (kube_certificatesigningrequest_created{signer_name="kubernetes.io/kubelet-serving"}) > 600) and on (certificatesigningrequest,signer_name) (max by (certificatesigningrequest,signer_name) (kube_certificatesigningrequest_condition{signer_name="kubernetes.io/kubelet-serving",condition=~"approved|denied|failed"}) == 0)
+        for: 2m
+        labels: {severity: warning}
+        annotations: {summary: 'Serving CSR {{ $labels.certificatesigningrequest }} is pending manual identity review; never approve all requests'}
+      - alert: KubernetesContainerOOMKilled
+        expr: (max by (namespace,pod,container) (kube_pod_container_status_last_terminated_reason{reason="OOMKilled"}) == 1) and on (namespace,pod,container) (time() - max by (namespace,pod,container) (kube_pod_container_status_last_terminated_timestamp) < 600)
+        labels: {severity: warning}
+        annotations: {summary: 'Container {{ $labels.namespace }}/{{ $labels.pod }}/{{ $labels.container }} recently exhausted memory'}
+      - alert: ContainerCPUThrottlingHigh
+        expr: (sum by (namespace,pod,container) (rate(container_cpu_cfs_throttled_periods_total{job="cadvisor",container!="",container!="POD"}[5m])) / clamp_min(sum by (namespace,pod,container) (rate(container_cpu_cfs_periods_total{job="cadvisor",container!="",container!="POD"}[5m])), 0.001)) > 0.25
+        for: 15m
+        labels: {severity: warning}
+        annotations: {summary: 'CPU quota throttles more than 25% of periods for {{ $labels.namespace }}/{{ $labels.pod }}/{{ $labels.container }}'}
+      - alert: ContainerMemoryLimitNear
+        expr: namespace_pod_container:memory_working_set_bytes / on (namespace,pod,container) (max by (namespace,pod,container) (kube_pod_container_resource_limits{resource="memory"}) > 0) > 0.9
+        for: 15m
+        labels: {severity: warning}
+        annotations: {summary: 'Working memory exceeds 90% of the limit for {{ $labels.namespace }}/{{ $labels.pod }}/{{ $labels.container }}'}
+      - alert: NodeMemoryPressureStalled
+        expr: rate(node_pressure_memory_stalled_seconds_total[5m]) > 0.1
+        for: 10m
+        labels: {severity: warning}
+        annotations: {summary: 'Memory pressure stalls tasks more than 10% of time on {{ $labels.node }}'}
+      - alert: KubernetesStateMetricsAPIError
+        expr: sum by (resource) (rate({__name__=~"kube_state_metrics_(list|watch)_total",result="error"}[5m])) > 0
+        for: 10m
+        labels: {severity: warning}
+        annotations: {summary: 'kube-state-metrics cannot reliably watch {{ $labels.resource }}'}
+  - name: request-paths
+    rules:
+      - alert: APIServerErrorsHigh
+        expr: sum by (node) (rate(apiserver_request_total{job="apiserver",code=~"5.."}[5m])) / clamp_min(sum by (node) (rate(apiserver_request_total{job="apiserver"}[5m])), 0.001) > 0.05
+        for: 5m
+        labels: {severity: warning}
+        annotations: {summary: 'More than 5% API requests fail on {{ $labels.node }}'}
+      - alert: APIServerLatencyHigh
+        expr: histogram_quantile(0.99, sum by (node,le) (rate(apiserver_request_duration_seconds_bucket{job="apiserver",verb!~"WATCH|CONNECT"}[5m]))) > 2
+        for: 10m
+        labels: {severity: warning}
+        annotations: {summary: 'API p99 request duration exceeds two seconds on {{ $labels.node }}'}
+      - alert: ClusterDNSFailures
+        expr: sum(rate(coredns_dns_responses_total{job="coredns",rcode="SERVFAIL"}[5m])) / clamp_min(sum(rate(coredns_dns_responses_total{job="coredns"}[5m])), 0.001) > 0.05
+        for: 5m
+        labels: {severity: warning}
+        annotations: {summary: More than 5% of cluster DNS responses are SERVFAIL}
+      - alert: IngressServiceErrorsHigh
+        expr: sum by (service) (rate(traefik_service_requests_total{code=~"5.."}[5m])) / clamp_min(sum by (service) (rate(traefik_service_requests_total[5m])), 0.001) > 0.05
+        for: 5m
+        labels: {severity: warning}
+        annotations: {summary: 'Ingress service {{ $labels.service }} returns more than 5% server errors'}
+      - alert: ApplicationMetricsUnavailable
+        expr: up{job="application-metrics"} == 0
+        for: 5m
+        labels: {severity: warning}
+        annotations: {summary: 'Opt-in application metrics unavailable for {{ $labels.namespace }}/{{ $labels.pod }}'}
+      - alert: CertificateNotReady
+        expr: max by (namespace,name) (certmanager_certificate_ready_status{condition="True"}) == 0
+        for: 15m
+        labels: {severity: warning}
+        annotations: {summary: 'Managed certificate {{ $labels.namespace }}/{{ $labels.name }} is not Ready'}
+      - alert: ManagedCertificateExpiresSoon
+        expr: max by (namespace,name) (certmanager_certificate_expiration_timestamp_seconds) - time() < 1209600
+        for: 1h
+        labels: {severity: warning}
+        annotations: {summary: 'Managed certificate {{ $labels.namespace }}/{{ $labels.name }} expires within 14 days'}
+  - name: bounded-observability-storage
+    rules:
+      - alert: LoggingVolumeSpaceLow
+        expr: (node_filesystem_avail_bytes{mountpoint="/var/lib/infra-logging/loki"} < 536870912) and on () (max(kube_deployment_spec_replicas{namespace="logging",deployment="loki"}) > 0)
+        for: 5m
+        labels: {severity: warning}
+        annotations: {summary: Loki filesystem has less than 512 MiB free}
+      - alert: LoggingVolumeSpaceCritical
+        expr: (node_filesystem_avail_bytes{mountpoint="/var/lib/infra-logging/loki"} < 268435456) and on () (max(kube_deployment_spec_replicas{namespace="logging",deployment="loki"}) > 0)
+        for: 2m
+        labels: {severity: critical}
+        annotations: {summary: Loki filesystem has less than 256 MiB free}
+      - alert: LokiDiscardingSamples
+        expr: sum by (reason) (increase(loki_discarded_samples_total[10m])) > 0
+        for: 2m
+        labels: {severity: warning}
+        annotations: {summary: 'Loki discarded log lines: {{ $labels.reason }}'}
+      - alert: AlloyDroppingLogs
+        expr: sum by (node) (increase(loki_write_dropped_entries_total[10m])) > 0
+        for: 2m
+        labels: {severity: warning}
+        annotations: {summary: 'Log delivery dropped entries on {{ $labels.node }}'}
+      - alert: GlitchTipGuardStale
+        expr: time() - max(glitchtip_capacity_guard_last_success_timestamp_seconds) > 180
+        for: 2m
+        labels: {severity: critical}
+        annotations: {summary: GlitchTip capacity guard has not succeeded within three minutes}
+      - alert: GlitchTipIngestionClosed
+        expr: max(glitchtip_capacity_guard_latched) == 1
+        labels: {severity: critical}
+        annotations: {summary: GlitchTip capacity guard closed event ingestion; explicit storage review is required to reopen it}
+      - alert: GlitchTipDatabaseBudgetWarning
+        expr: max(glitchtip_capacity_guard_database_bytes) > 1073741824
+        for: 10m
+        labels: {severity: warning}
+        annotations: {summary: GlitchTip database exceeds 1 GiB of its 2 GiB ingestion guard budget}
+      - alert: GlitchTipDatabaseBudgetCritical
+        expr: max(glitchtip_capacity_guard_database_bytes) > 1610612736
+        for: 5m
+        labels: {severity: critical}
+        annotations: {summary: GlitchTip database exceeds 1.5 GiB of its 2 GiB ingestion guard budget}
+
+      - alert: GlitchTipTaskQueueGrowing
+        expr: max by (queue) (vtasks_queue_depth) > 100
+        for: 10m
+        labels: {severity: warning}
+        annotations: {summary: 'GlitchTip task queue {{ $labels.queue }} exceeds 100 waiting tasks'}
+      - alert: ObservabilityMetricsUnavailable
+        expr: up{job=~"cert-manager|logging|glitchtip"} == 0
+        for: 5m
+        labels: {severity: warning}
+        annotations: {summary: 'Metrics endpoint unavailable for {{ $labels.job }} on {{ $labels.instance }}'}
+      - alert: GlitchTipGuardMetricsMissing
+        expr: (count(up{job="glitchtip",component="web"} == 1) > 0) unless on () glitchtip_capacity_guard_last_success_timestamp_seconds
+        for: 5m
+        labels: {severity: critical}
+        annotations: {summary: GlitchTip web metrics are reachable but its capacity guard metric is absent}
+  - name: bounded-host-details
+    rules:
+      - alert: HostDetailCollectionFailed
+        expr: infra_detail_collect_success == 0
+        for: 3m
+        labels: {severity: warning}
+        annotations: {summary: 'Private {{ $labels.component }} metrics collection failed on {{ $labels.node }}'}
+      - alert: HostDetailCollectionStale
+        expr: (time() - infra_detail_last_success_timestamp_seconds > 180) and on (instance,component) (infra_detail_configured == 1)
+        for: 2m
+        labels: {severity: warning}
+        annotations: {summary: 'Private {{ $labels.component }} metrics have not refreshed on {{ $labels.node }}'}
+      - alert: RequiredHostServiceInactive
+        expr: infra_service_active != on (instance,service,node) infra_service_expected_active
+        for: 2m
+        labels: {severity: critical}
+        annotations: {summary: 'Service {{ $labels.service }} on {{ $labels.node }} differs from its declared active/standby state'}
+      - alert: DERPDropsPackets
+        expr: increase(infra_derp_packets_dropped[10m]) > 0
+        for: 2m
+        labels: {severity: warning}
+        annotations: {summary: 'DERP on {{ $labels.node }} drops relay packets'}
+      - alert: HomeGPUHot
+        expr: infra_gpu_temperature_celsius > 85
+        for: 5m
+        labels: {severity: warning}
+        annotations: {summary: 'GPU {{ $labels.gpu }} on {{ $labels.node }} stays above 85 Celsius; this collector never changes power or driver state'}
+      - alert: HostDetailMetricsMissing
+        expr: (up{job="node-exporter"} == 1) unless on (instance) infra_detail_collect_success{component="systemd"}
+        for: 5m
+        labels: {severity: warning}
+        annotations: {summary: 'Node exporter on {{ $labels.node }} is reachable but the configured host detail collector metrics are absent'}

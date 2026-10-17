@@ -27,3 +27,92 @@ tests:
               container: etcd
             exp_annotations:
               summary: 'etcd etcd-home restarted at least twice in 20 minutes; inspect startup, catch-up and transport health'
+  - name: duplicate-state-exporters-do-not-double-requests
+    interval: 1m
+    input_series:
+      - series: 'kube_pod_container_resource_requests{namespace="app",pod="web-0",container="web",node="home",resource="memory",instance="ksm1"}'
+        values: '128+0x10'
+      - series: 'kube_pod_container_resource_requests{namespace="app",pod="web-0",container="web",node="home",resource="memory",instance="ksm2"}'
+        values: '128+0x10'
+      - series: 'kube_pod_container_resource_requests{namespace="app",pod="web-1",container="web",node="home",resource="memory",instance="ksm1"}'
+        values: '64+0x10'
+    promql_expr_test:
+      - expr: node_resource:container_requests:sum
+        eval_time: 5m
+        exp_samples:
+          - labels: 'node_resource:container_requests:sum{node="home",resource="memory"}'
+            value: 192
+  - name: pending-serving-csr-needs-human-review-approved-does-not
+    interval: 1m
+    input_series:
+      - series: 'kube_certificatesigningrequest_created{certificatesigningrequest="csr-pending",signer_name="kubernetes.io/kubelet-serving"}'
+        values: '0+0x20'
+      - series: 'kube_certificatesigningrequest_condition{certificatesigningrequest="csr-pending",signer_name="kubernetes.io/kubelet-serving",condition="approved"}'
+        values: '0+0x20'
+      - series: 'kube_certificatesigningrequest_condition{certificatesigningrequest="csr-pending",signer_name="kubernetes.io/kubelet-serving",condition="denied"}'
+        values: '0+0x20'
+      - series: 'kube_certificatesigningrequest_created{certificatesigningrequest="csr-approved",signer_name="kubernetes.io/kubelet-serving"}'
+        values: '0+0x20'
+      - series: 'kube_certificatesigningrequest_condition{certificatesigningrequest="csr-approved",signer_name="kubernetes.io/kubelet-serving",condition="approved"}'
+        values: '1+0x20'
+      - series: 'kube_certificatesigningrequest_condition{certificatesigningrequest="csr-approved",signer_name="kubernetes.io/kubelet-serving",condition="denied"}'
+        values: '0+0x20'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: KubeletServingCSRPending
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: KubeletServingCSRPending
+        exp_alerts:
+          - exp_labels: {certificatesigningrequest: csr-pending, signer_name: kubernetes.io/kubelet-serving, severity: warning}
+            exp_annotations: {summary: 'Serving CSR csr-pending is pending manual identity review; never approve all requests'}
+  - name: old-oom-does-not-alert-indefinitely
+    interval: 1m
+    input_series:
+      - series: 'kube_pod_container_status_last_terminated_reason{namespace="app",pod="web",container="web",reason="OOMKilled"}'
+        values: '1+0x20'
+      - series: 'kube_pod_container_status_last_terminated_timestamp{namespace="app",pod="web",container="web"}'
+        values: '60+0x20'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: KubernetesContainerOOMKilled
+        exp_alerts:
+          - exp_labels: {namespace: app, pod: web, container: web, severity: warning}
+            exp_annotations: {summary: 'Container app/web/web recently exhausted memory'}
+      - eval_time: 15m
+        alertname: KubernetesContainerOOMKilled
+        exp_alerts: []
+  - name: glitchtip-storage-latch-and-stale-guard
+    interval: 1m
+    input_series:
+      - series: glitchtip_capacity_guard_latched
+        values: '1+0x10'
+      - series: glitchtip_capacity_guard_last_success_timestamp_seconds
+        values: '0+0x10'
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: GlitchTipGuardStale
+        exp_alerts:
+          - exp_labels: {severity: critical}
+            exp_annotations: {summary: GlitchTip capacity guard has not succeeded within three minutes}
+      - eval_time: 1m
+        alertname: GlitchTipIngestionClosed
+        exp_alerts:
+          - exp_labels: {severity: critical}
+            exp_annotations: {summary: GlitchTip capacity guard closed event ingestion; explicit storage review is required to reopen it}
+  - name: standby-headscale-inactive-is-correct-unexpected-active-alerts
+    interval: 1m
+    input_series:
+      - series: 'infra_service_active{instance="standby:9100",node="standby",service="infra-headscale.service"}'
+        values: '0+0x4 1+0x10'
+      - series: 'infra_service_expected_active{instance="standby:9100",node="standby",service="infra-headscale.service"}'
+        values: '0+0x15'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: RequiredHostServiceInactive
+        exp_alerts: []
+      - eval_time: 8m
+        alertname: RequiredHostServiceInactive
+        exp_alerts:
+          - exp_labels: {instance: 'standby:9100', node: standby, service: infra-headscale.service, severity: critical}
+            exp_annotations: {summary: 'Service infra-headscale.service on standby differs from its declared active/standby state'}

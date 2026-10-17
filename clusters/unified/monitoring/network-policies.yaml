@@ -14,6 +14,10 @@ spec:
         - {port: 8081, protocol: TCP}
         - {port: 9115, protocol: TCP}
     - from:
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: observability}}
+          podSelector: {matchLabels: {app: grafana}}
+      ports: [{port: 9090, protocol: TCP}]
+    - from:
         - podSelector: {matchLabels: {app: alertmanager}}
       ports:
         - {port: 9094, protocol: TCP}
@@ -48,6 +52,9 @@ spec:
         - {port: 9100, protocol: TCP}
         - {port: 2381, protocol: TCP}
         - {port: 6443, protocol: TCP}
+        - {port: 10250, protocol: TCP}
+        - {port: 9153, protocol: TCP}
+        - {port: 9080, protocol: TCP}
     - to:
         - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: public-dns}}
           podSelector: {matchLabels: {app: public-dns}}
@@ -73,3 +80,36 @@ spec:
   egress:
     - ports:
         - {port: 443, protocol: TCP}
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: prometheus-metrics-egress}
+spec:
+  podSelector: {matchLabels: {app: prometheus}}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: kube-system}}
+          podSelector: {matchLabels: {k8s-app: kube-dns}}
+      ports: [{port: 9153, protocol: TCP}]
+    - to:
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: ingress-system}}
+          podSelector: {matchLabels: {app.kubernetes.io/name: traefik}}
+      ports: [{port: 9100, protocol: TCP}]
+    - to:
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: cert-manager}}
+          podSelector: {matchLabels: {app.kubernetes.io/instance: cert-manager}}
+      ports: [{port: 9402, protocol: TCP}]
+    - to:
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: error-tracking}}
+          podSelector: {matchLabels: {app.kubernetes.io/name: glitchtip}}
+      ports: [{port: 8000, protocol: TCP}, {port: 9000, protocol: TCP}]
+    - to:
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: logging}}
+          podSelector: {matchExpressions: [{key: app, operator: In, values: [loki, alloy]}]}
+      ports: [{port: 3100, protocol: TCP}, {port: 12345, protocol: TCP}]
+    - to:
+        - namespaceSelector: {}
+          podSelector: {matchLabels: {infra.shanginn.io/metrics: 'true'}}
+      ports: [{port: metrics, protocol: TCP}]

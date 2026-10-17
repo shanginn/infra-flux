@@ -85,9 +85,6 @@ func findPeer(st *ipnstate.Status, hostname string) (*ipnstate.PeerStatus, error
 	if found == nil {
 		return nil, errors.New("peer not present in netmap")
 	}
-	if !found.Online {
-		return nil, errors.New("peer not online")
-	}
 	return found, nil
 }
 func peerIPv4(p *ipnstate.PeerStatus) (netip.Addr, error) {
@@ -299,6 +296,7 @@ func run() error {
 		}
 		if err == nil {
 			ip, err = peerIPv4(peer)
+			f["peer_online"] = peer.Online
 			f["peer_relay"] = peer.Relay
 			f["peer_direct_address"] = peer.CurAddr
 			f["peer_relay_address"] = peer.PeerRelay

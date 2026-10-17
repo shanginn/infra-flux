@@ -6,7 +6,9 @@ socket. Its tsnet listener accepts only the other uniquely named probe peer on
 TCP 18089. Each direction opens a new connection every 2 seconds, echoes 128 KiB of
 random data, and verifies SHA-256. Every fifth successful exchange also requests a
 DISCO ping and records the actual DERP region. JSONL output includes UTC time,
-latency, byte counters, errors and the observed relay.
+latency, byte counters, errors and the observed relay. The coordinator-provided
+`peer_online` flag is diagnostic only: a temporarily offline cached peer is still
+dialed, so availability is measured from actual bytes.
 
 Build the pinned source outside the server. Go verifies dependencies against the
 module checksums. Keep the generated executable outside Git:

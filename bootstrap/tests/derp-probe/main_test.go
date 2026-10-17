@@ -103,3 +103,14 @@ func TestSecretRedaction(t *testing.T) {
 		t.Fatal("key leaked")
 	}
 }
+
+// A coordinator reconnect can temporarily mark a cached peer offline while
+// established DERP transports remain usable; attempt bytes instead of gating.
+func TestOfflineControlStatusStillAttemptsPeer(t *testing.T) {
+	peer := &ipnstate.PeerStatus{HostName: "infra-derp-test-other", Online: false, TailscaleIPs: []netip.Addr{netip.MustParseAddr("100.64.0.2")}}
+	st := &ipnstate.Status{Peer: map[key.NodePublic]*ipnstate.PeerStatus{key.NewNode().Public(): peer}}
+	got, err := findPeer(st, peer.HostName)
+	if err != nil || got != peer {
+		t.Fatalf("control status suppressed a data probe: %v", err)
+	}
+}

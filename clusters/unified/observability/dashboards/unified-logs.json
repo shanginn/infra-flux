@@ -1,0 +1,84 @@
+{
+  "uid": "unified-logs",
+  "title": "Kubernetes logs",
+  "schemaVersion": 41,
+  "version": 1,
+  "editable": false,
+  "tags": [
+    "unified",
+    "logs"
+  ],
+  "refresh": "1m",
+  "timezone": "browser",
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "namespace",
+        "type": "query",
+        "datasource": {
+          "type": "loki",
+          "uid": "loki-home"
+        },
+        "query": "label_values(namespace)",
+        "includeAll": true,
+        "allValue": ".+",
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        },
+        "refresh": 1
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "text",
+      "title": "Bounded operational logs",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 4
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "Home-only Loki: 48h retention, 4 GiB hard filesystem. Home outages make log history unavailable; reboot preserves disk, but bounded collector buffers can lose logs. Redaction is best-effort; applications must not emit secrets. Audit/test/backup/restore sources are excluded. Application exception tracking requires explicit application SDK configuration."
+      }
+    },
+    {
+      "id": 2,
+      "type": "logs",
+      "title": "Recent pod logs",
+      "gridPos": {
+        "x": 0,
+        "y": 4,
+        "w": 24,
+        "h": 20
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "loki-home"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "{namespace=~\"$namespace\"}",
+          "queryType": "range",
+          "maxLines": 200
+        }
+      ],
+      "options": {
+        "showTime": true,
+        "showLabels": false,
+        "wrapLogMessage": true,
+        "sortOrder": "Descending",
+        "enableLogDetails": true
+      }
+    }
+  ]
+}

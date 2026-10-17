@@ -1,0 +1,57 @@
+---
+- name: Prepare only the home bounded log filesystem
+  hosts: home
+  become: true
+  gather_facts: true
+  any_errors_fatal: true
+  vars:
+    logging_prepare_enabled: false
+    logging_cluster_uid: ''
+  tasks:
+    - name: Require deliberate preparation of the owned home node
+      ansible.builtin.assert:
+        that:
+          - logging_prepare_enabled | bool
+          - not ansible_check_mode
+          - ansible_play_hosts_all == ['home']
+          - ansible_facts.distribution == 'Debian'
+          - ansible_facts.distribution_major_version == '13'
+          - logging_cluster_uid is match('^[0-9a-f-]{36}$')
+        fail_msg: Supply the runtime cluster UID; this only creates a new owned 4 GiB file filesystem, not workloads.
+    - name: Check required existing OS utilities
+      ansible.builtin.command:
+        argv: [/usr/bin/which, fallocate, mkfs.ext4, findmnt, losetup, blkid, systemctl, kubectl]
+      changed_when: false
+    - name: Inspect an existing helper without following links
+      ansible.builtin.stat:
+        path: /etc/infra-flux/logging-volume.py
+        follow: false
+        checksum_algorithm: sha256
+      register: logging_helper
+    - name: Refuse replacing an unowned or changed helper
+      ansible.builtin.assert:
+        that:
+          - >-
+            not logging_helper.stat.exists or
+            (logging_helper.stat.isreg | default(false) and
+             not logging_helper.stat.islnk | default(false) and
+             logging_helper.stat.uid == 0 and logging_helper.stat.gid == 0 and
+             logging_helper.stat.mode == '0700' and logging_helper.stat.nlink == 1 and
+             logging_helper.stat.checksum == lookup('file', 'files/logging-volume.py', rstrip=false) | hash('sha256'))
+        fail_msg: An existing helper must be identical and owned; changed versions require explicit maintenance review.
+    - name: Install guarded logging preparation helper
+      ansible.builtin.copy:
+        src: files/logging-volume.py
+        dest: /etc/infra-flux/logging-volume.py
+        owner: root
+        group: root
+        mode: '0700'
+    - name: Prepare and verify the owned bounded filesystem
+      ansible.builtin.command:
+        argv: [/usr/bin/python3, /etc/infra-flux/logging-volume.py, prepare, --expected-cluster-uid, '{{ logging_cluster_uid }}']
+      register: logging_prepare
+      changed_when: (logging_prepare.stdout | from_json).changed
+    - name: Read back the mount ownership and hard capacity
+      ansible.builtin.command:
+        argv: [/usr/bin/python3, /etc/infra-flux/logging-volume.py, verify]
+      changed_when: false

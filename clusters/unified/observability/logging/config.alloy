@@ -1,0 +1,120 @@
+logging {
+  level = "warn"
+}
+// Read only CRI stdout/stderr files. No Kubernetes API, Secrets, pod env, or
+// host journal is accessed. Discovery labels come only from the standard path.
+local.file_match "pods" {
+  path_targets = [{"__path__" = "/var/log/pods/*/*/*.log"}]
+  ignore_older_than = "1h"
+  sync_period = "30s"
+}
+discovery.relabel "pods" {
+  targets = local.file_match.pods.targets
+  rule {
+    source_labels = ["__path__"]
+    regex = "/var/log/pods/([^_]+)_([^_]+)_[^/]+/([^/]+)/[^/]+[.]log"
+    target_label = "namespace"
+    replacement = "$1"
+  }
+  rule {
+    source_labels = ["__path__"]
+    regex = "/var/log/pods/([^_]+)_([^_]+)_[^/]+/([^/]+)/[^/]+[.]log"
+    target_label = "pod"
+    replacement = "$2"
+  }
+  rule {
+    source_labels = ["__path__"]
+    regex = "/var/log/pods/([^_]+)_([^_]+)_[^/]+/([^/]+)/[^/]+[.]log"
+    target_label = "container"
+    replacement = "$3"
+  }
+  // Operational test/audit/backup logs must not leave their source namespace.
+  rule {
+    source_labels = ["namespace"]
+    regex = "infra-ha-test|.*(audit|backup|restore|validation|scratch|probe).*|logging"
+    action = "drop"
+  }
+  rule {
+    source_labels = ["pod"]
+    regex = ".*(backup|restore|validation|observer|smoke|probe).*"
+    action = "drop"
+  }
+  rule {
+    source_labels = ["namespace"]
+    regex = ""
+    action = "drop"
+  }
+  rule {
+    target_label = "node"
+    replacement = sys.env("NODE_NAME")
+  }
+}
+loki.source.file "pods" {
+  targets = discovery.relabel.pods.output
+  forward_to = [loki.process.sanitize.receiver]
+  tail_from_end = true
+}
+loki.process "sanitize" {
+  forward_to = [loki.write.home.receiver]
+  stage.cri {
+    max_partial_lines = 32
+    max_partial_line_size = 8192
+    max_partial_line_size_truncate = true
+  }
+  stage.drop {
+    longer_than = "8KB"
+    drop_counter_reason = "line_too_long"
+  }
+  stage.drop {
+    older_than = "48h"
+    drop_counter_reason = "too_old"
+  }
+  // Drop key material entirely. Generic redaction below is not a secret scanner.
+  stage.drop {
+    expression = "-----BEGIN .*PRIVATE KEY-----|AGE-SECRET-KEY-|kind[=: ]+Secret"
+    drop_counter_reason = "secret_material"
+  }
+  stage.replace {
+    expression = "(?i)(?:authorization|proxy-authorization|cookie|set-cookie)[\" ]*[:=][ ]*([^\r\n]+)"
+    replace = "[REDACTED]"
+  }
+  stage.replace {
+    expression = "(?i)(?:password|passwd|secret|token|api[_-]?key|access[_-]?key)[\" ]*[:=][\" ]*([^\" ,;}&]+)"
+    replace = "[REDACTED]"
+  }
+  stage.replace {
+    expression = "(eyJ[A-Za-z0-9_-]+[.][A-Za-z0-9_-]+[.][A-Za-z0-9_-]+)"
+    replace = "[REDACTED-JWT]"
+  }
+  stage.replace {
+    expression = "(?i)https?://([^/@ :]+:[^/@ ]+@)"
+    replace = "[REDACTED]@"
+  }
+  stage.replace {
+    expression = "[?]([^ ]+)"
+    replace = "[REDACTED-QUERY]"
+  }
+  stage.label_keep {
+    values = ["namespace", "pod", "container", "node", "stream"]
+  }
+  stage.limit {
+    rate = 50
+    burst = 100
+    drop = true
+  }
+}
+loki.write "home" {
+  endpoint {
+    url = "http://loki.logging.svc.cluster.local:3100/loki/api/v1/push"
+    batch_size = "128KiB"
+    batch_wait = "1s"
+    remote_timeout = "5s"
+    min_backoff_period = "500ms"
+    max_backoff_period = "2s"
+    max_backoff_retries = 3
+    retry_on_http_429 = false
+    follow_redirects = false
+    proxy_from_environment = false
+  }
+  // No client WAL: no disk queue can fill a VPS when home is disconnected.
+}

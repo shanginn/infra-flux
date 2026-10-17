@@ -1,0 +1,31 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: observability
+resources:
+  - namespace.yaml
+  - grafana.yaml
+  - ingress.yaml
+  - network-policy.yaml
+  - monitoring-rbac.yaml
+configMapGenerator:
+  - name: grafana-config
+    files: [grafana.ini]
+  - name: grafana-datasources
+    files: [datasources.yaml]
+  - name: grafana-providers
+    files: [providers.yaml]
+  - name: grafana-dashboards
+    files:
+      - dashboards/unified-nodes.json
+      - dashboards/unified-kubernetes.json
+      - dashboards/unified-control-plane.json
+      - dashboards/unified-postgres.json
+      - dashboards/unified-garage.json
+      - dashboards/unified-ingress.json
+      - dashboards/unified-vpn.json
+      - dashboards/unified-backups.json
+      - dashboards/unified-logs.json
+generatorOptions:
+  annotations:
+    # Grafana variables/macros must not be consumed by Flux postBuild substitution.
+    kustomize.toolkit.fluxcd.io/substitute: disabled

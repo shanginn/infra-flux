@@ -1,0 +1,75 @@
+auth_enabled: false
+server:
+  http_listen_port: 3100
+  grpc_listen_port: 9095
+  log_level: warn
+  http_server_read_timeout: 30s
+  http_server_write_timeout: 30s
+common:
+  path_prefix: /loki
+  replication_factor: 1
+  ring:
+    instance_addr: 127.0.0.1
+    kvstore: {store: inmemory}
+  storage:
+    filesystem: {chunks_directory: /loki/chunks, rules_directory: /loki/rules}
+schema_config:
+  configs:
+    - from: '2026-01-01'
+      store: tsdb
+      object_store: filesystem
+      schema: v13
+      index: {prefix: index_, period: 24h}
+storage_config:
+  tsdb_shipper:
+    active_index_directory: /loki/index
+    cache_location: /loki/index-cache
+    cache_ttl: 1h
+compactor:
+  working_directory: /loki/compactor
+  compaction_interval: 10m
+  retention_enabled: true
+  retention_delete_delay: 2h
+  retention_delete_worker_count: 1
+  delete_request_store: filesystem
+ingester:
+  chunk_idle_period: 10m
+  max_chunk_age: 1h
+  chunk_target_size: 262144
+  wal:
+    enabled: true
+    dir: /loki/wal
+    checkpoint_duration: 5m
+    replay_memory_ceiling: 256MB
+limits_config:
+  retention_period: 48h
+  ingestion_rate_strategy: local
+  ingestion_rate_mb: 0.01
+  ingestion_burst_size_mb: 1
+  max_line_size: 8KB
+  max_line_size_truncate: false
+  max_label_names_per_series: 8
+  max_label_name_length: 64
+  max_label_value_length: 256
+  max_streams_per_user: 500
+  max_global_streams_per_user: 500
+  per_stream_rate_limit: 8KB
+  per_stream_rate_limit_burst: 64KB
+  max_query_lookback: 48h
+  max_query_length: 48h
+  max_query_parallelism: 2
+  tsdb_max_query_parallelism: 2
+  max_entries_limit_per_query: 1000
+  query_timeout: 30s
+  reject_old_samples: true
+  reject_old_samples_max_age: 48h
+  allow_structured_metadata: false
+query_range:
+  parallelise_shardable_queries: false
+  cache_results: false
+querier:
+  max_concurrent: 2
+frontend:
+  max_outstanding_per_tenant: 16
+analytics:
+  reporting_enabled: false

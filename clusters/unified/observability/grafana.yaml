@@ -1,0 +1,83 @@
+apiVersion: v1
+kind: Service
+metadata: {name: grafana}
+spec:
+  selector: {app: grafana}
+  ports: [{name: http, port: 3000, targetPort: http}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: grafana}
+spec:
+  replicas: 2
+  strategy: {type: RollingUpdate, rollingUpdate: {maxSurge: 0, maxUnavailable: 1}}
+  selector: {matchLabels: {app: grafana}}
+  template:
+    metadata: {labels: {app: grafana, app.kubernetes.io/name: grafana}}
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 30
+      securityContext: {runAsNonRoot: true, runAsUser: 472, runAsGroup: 472, fsGroup: 472, seccompProfile: {type: RuntimeDefault}}
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions: [{key: infra.shanginn.io/site, operator: In, values: [msk, fin]}]
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector: {matchLabels: {app: grafana}}
+              topologyKey: kubernetes.io/hostname
+      containers:
+        - name: grafana
+          image: docker.io/grafana/grafana:13.2.4@sha256:dbbc38ea21103cefb50396340cd88afec779c7e070b0a7bf5a75b4ce46651d3f
+          ports: [{name: http, containerPort: 3000}]
+          env:
+            - name: GF_SECURITY_ADMIN_USER
+              valueFrom: {secretKeyRef: {name: grafana-runtime, key: GF_SECURITY_ADMIN_USER}}
+            - name: GF_SECURITY_ADMIN_PASSWORD
+              valueFrom: {secretKeyRef: {name: grafana-runtime, key: GF_SECURITY_ADMIN_PASSWORD}}
+            - name: GF_SECURITY_SECRET_KEY
+              valueFrom: {secretKeyRef: {name: grafana-runtime, key: GF_SECURITY_SECRET_KEY}}
+            - name: GF_DATABASE_USER
+              valueFrom: {secretKeyRef: {name: grafana-runtime, key: GF_DATABASE_USER}}
+            - name: GF_DATABASE_PASSWORD
+              valueFrom: {secretKeyRef: {name: grafana-runtime, key: GF_DATABASE_PASSWORD}}
+            - {name: GF_PATHS_LOGS, value: /tmp}
+          resources:
+            requests: {cpu: 50m, memory: 128Mi, ephemeral-storage: 128Mi}
+            limits: {cpu: '1', memory: 512Mi, ephemeral-storage: 256Mi}
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+          startupProbe: {httpGet: {path: /api/health, port: http, httpHeaders: [{name: Host, value: grafana.apps.shanginn.io}]}, periodSeconds: 10, timeoutSeconds: 5, failureThreshold: 60}
+          readinessProbe: {httpGet: {path: /api/health, port: http, httpHeaders: [{name: Host, value: grafana.apps.shanginn.io}]}, periodSeconds: 10, timeoutSeconds: 5}
+          # Liveness checks the process listener; a database failover must not cause a restart loop.
+          livenessProbe: {tcpSocket: {port: http}, periodSeconds: 30, timeoutSeconds: 5}
+          volumeMounts:
+            - {name: config, mountPath: /etc/grafana/grafana.ini, subPath: grafana.ini, readOnly: true}
+            - {name: datasources, mountPath: /etc/grafana/provisioning/datasources, readOnly: true}
+            - {name: providers, mountPath: /etc/grafana/provisioning/dashboards, readOnly: true}
+            - {name: dashboards, mountPath: /etc/grafana/dashboards, readOnly: true}
+            - {name: ca, mountPath: /etc/postgresql, readOnly: true}
+            - {name: scratch, mountPath: /var/lib/grafana}
+            - {name: temporary, mountPath: /tmp}
+      volumes:
+        - name: config
+          configMap: {name: grafana-config}
+        - name: datasources
+          configMap: {name: grafana-datasources}
+        - name: providers
+          configMap: {name: grafana-providers}
+        - name: dashboards
+          configMap: {name: grafana-dashboards}
+        - name: ca
+          secret: {secretName: grafana-runtime, defaultMode: 292, items: [{key: ca.crt, path: ca.crt}]}
+        - name: scratch
+          emptyDir: {sizeLimit: 128Mi}
+        - name: temporary
+          emptyDir: {sizeLimit: 32Mi}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: {name: grafana}
+spec:
+  minAvailable: 1
+  selector: {matchLabels: {app: grafana}}

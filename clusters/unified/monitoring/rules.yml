@@ -324,10 +324,10 @@ groups:
         labels: {severity: warning}
         annotations: {summary: 'Container {{ $labels.namespace }}/{{ $labels.pod }}/{{ $labels.container }} recently exhausted memory'}
       - alert: ContainerCPUThrottlingHigh
-        expr: (sum by (namespace,pod,container) (rate(container_cpu_cfs_throttled_periods_total{job="cadvisor",container!="",container!="POD"}[5m])) / clamp_min(sum by (namespace,pod,container) (rate(container_cpu_cfs_periods_total{job="cadvisor",container!="",container!="POD"}[5m])), 0.001)) > 0.25
+        expr: ((sum by (namespace,pod,container) (rate(container_cpu_cfs_throttled_periods_total{job="cadvisor",container!="",container!="POD"}[5m])) / clamp_min(sum by (namespace,pod,container) (rate(container_cpu_cfs_periods_total{job="cadvisor",container!="",container!="POD"}[5m])), 0.001)) > 0.25) and on (namespace,pod,container) (sum by (namespace,pod,container) (rate(container_cpu_cfs_throttled_seconds_total{job="cadvisor",container!="",container!="POD"}[5m])) > 0.1)
         for: 15m
         labels: {severity: warning}
-        annotations: {summary: 'CPU quota throttles more than 25% of periods for {{ $labels.namespace }}/{{ $labels.pod }}/{{ $labels.container }}'}
+        annotations: {summary: 'CPU quota throttles more than 25% of periods and 0.1 seconds/s for {{ $labels.namespace }}/{{ $labels.pod }}/{{ $labels.container }}'}
       - alert: ContainerMemoryLimitNear
         expr: namespace_pod_container:memory_working_set_bytes / on (namespace,pod,container) (max by (namespace,pod,container) (kube_pod_container_resource_limits{resource="memory"}) > 0) > 0.9
         for: 15m

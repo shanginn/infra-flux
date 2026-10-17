@@ -186,3 +186,36 @@ tests:
       - eval_time: 6m
         alertname: LokiFilesystemCollectionFailed
         exp_alerts: []
+  - name: sustained-cpu-throttling-needs-both-material-time-and-high-period-ratio
+    interval: 1m
+    input_series:
+      # Frequent tiny collection bursts: high fraction of active periods, little lost time.
+      - series: 'container_cpu_cfs_periods_total{job="cadvisor",namespace="app",pod="sparse",container="worker"}'
+        values: '0+60x25'
+      - series: 'container_cpu_cfs_throttled_periods_total{job="cadvisor",namespace="app",pod="sparse",container="worker"}'
+        values: '0+30x25'
+      - series: 'container_cpu_cfs_throttled_seconds_total{job="cadvisor",namespace="app",pod="sparse",container="worker"}'
+        values: '0+0.6x25'
+      # Material continuous contention: 50% of periods and 0.2 throttled seconds/s.
+      - series: 'container_cpu_cfs_periods_total{job="cadvisor",namespace="app",pod="busy",container="worker"}'
+        values: '0+60x25'
+      - series: 'container_cpu_cfs_throttled_periods_total{job="cadvisor",namespace="app",pod="busy",container="worker"}'
+        values: '0+30x25'
+      - series: 'container_cpu_cfs_throttled_seconds_total{job="cadvisor",namespace="app",pod="busy",container="worker"}'
+        values: '0+12x25'
+      # Large individual delays alone do not meet the sustained period-ratio condition.
+      - series: 'container_cpu_cfs_periods_total{job="cadvisor",namespace="app",pod="low-ratio",container="worker"}'
+        values: '0+60x25'
+      - series: 'container_cpu_cfs_throttled_periods_total{job="cadvisor",namespace="app",pod="low-ratio",container="worker"}'
+        values: '0+6x25'
+      - series: 'container_cpu_cfs_throttled_seconds_total{job="cadvisor",namespace="app",pod="low-ratio",container="worker"}'
+        values: '0+12x25'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: ContainerCPUThrottlingHigh
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: ContainerCPUThrottlingHigh
+        exp_alerts:
+          - exp_labels: {namespace: app, pod: busy, container: worker, severity: warning}
+            exp_annotations: {summary: 'CPU quota throttles more than 25% of periods and 0.1 seconds/s for app/busy/worker'}

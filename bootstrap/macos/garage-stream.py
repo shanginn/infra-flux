@@ -302,6 +302,16 @@ def inventory_admin(pod):
     require(len(keys) <= 10000, 'Too many access keys')
     keys = [admin_api(pod, 'GetKeyInfo', {'id': key['id'], 'showSecretKey': True}) for key in sorted(keys, key=lambda key: key['id'])]
     require(all(key.get('secretAccessKey') for key in keys), 'Cannot export complete access-key recovery metadata')
+    for key in keys:
+        # This reverse permission set is also unordered in GetKeyInfo. Keep all
+        # aliases and grants, changing only the order of distinct bucket IDs.
+        entries = key.get('buckets')
+        require(isinstance(entries, list) and all(isinstance(entry, dict) and
+                isinstance(entry.get('id'), str) and entry['id'] for entry in entries),
+                'Invalid key bucket permission set')
+        ids = [entry['id'] for entry in entries]
+        require(len(ids) == len(set(ids)), 'Duplicate key bucket IDs')
+        key['buckets'] = sorted(entries, key=lambda entry: entry['id'])
     return {'buckets': details, 'keys': keys}
 
 

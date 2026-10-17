@@ -160,12 +160,15 @@ class PermissionOrderTests(unittest.TestCase):
             {'accessKeyId':'synthetic-a','name':'backup','permissions':{'read':True,'write':False,'owner':False}},
             {'accessKeyId':'synthetic-b','name':'app','permissions':{'read':True,'write':True,'owner':False}},
         ]
-    def inventory(self, entries):
+    def inventory(self, entries, key_buckets=None):
+        catalog=[{'id':'test','globalAliases':['example'],'localAliases':[]}]
+        if key_buckets is not None:catalog.append({'id':'other','globalAliases':['second'],'localAliases':[]})
+        else:key_buckets=[{'id':'test','globalAliases':['example'],'permissions':{'read':True,'write':False,'owner':False}}]
         def api(pod, name, body=None):
-            if name == 'ListBuckets':return [{'id':'test','globalAliases':['example'],'localAliases':[]}]
-            if name == 'GetBucketInfo':return {'id':'test','globalAliases':['example'],'localAliases':[], 'keys':copy.deepcopy(entries),'objects':2,'bytes':128000}
+            if name == 'ListBuckets':return copy.deepcopy(catalog)
+            if name == 'GetBucketInfo':return dict(copy.deepcopy(next(b for b in catalog if b['id']==body['id'])),keys=copy.deepcopy(entries),objects=2,bytes=128000)
             if name == 'ListKeys':return [{'id':'synthetic-a'},{'id':'synthetic-b'}]
-            if name == 'GetKeyInfo':return {'accessKeyId':body['id'],'secretAccessKey':'synthetic-secret-'+body['id']}
+            if name == 'GetKeyInfo':return {'accessKeyId':body['id'],'secretAccessKey':'synthetic-secret-'+body['id'],'buckets':copy.deepcopy(key_buckets)}
             raise AssertionError('Unexpected API method')
         with patch.object(g,'admin_api',side_effect=api):return g.inventory_admin('synthetic-pod')
     def export(self, before, after):
@@ -194,6 +197,38 @@ class PermissionOrderTests(unittest.TestCase):
     def test_invalid_key_identity_fail_closed(self):
         changed=copy.deepcopy(self.entries);changed[0]['accessKeyId']=None
         with self.assertRaisesRegex(RuntimeError,'Invalid bucket key permission set'):self.inventory(changed)
+
+
+    def bucket_grants(self):
+        return [
+            {'id':'test','globalAliases':['example'],'permissions':{'read':True,'write':False,'owner':False}},
+            {'id':'other','globalAliases':['second'],'permissions':{'read':True,'write':False,'owner':False}},
+        ]
+    def test_reordered_reverse_bucket_set_exports_and_verifies(self):
+        grants=self.bucket_grants()
+        before=self.inventory(self.entries,grants);after=self.inventory(self.entries,list(reversed(grants)))
+        self.assertEqual(self.export(before,after)['objects'],4)
+    def test_reverse_grant_change_is_not_hidden(self):
+        grants=self.bucket_grants();changed=copy.deepcopy(grants);changed[0]['permissions']['write']=True
+        with self.assertRaisesRegex(RuntimeError,'configuration changed'):
+            self.export(self.inventory(self.entries,grants),self.inventory(self.entries,changed))
+    def test_reverse_alias_change_is_not_hidden(self):
+        grants=self.bucket_grants();changed=copy.deepcopy(grants);changed[0]['globalAliases']=['renamed']
+        with self.assertRaisesRegex(RuntimeError,'configuration changed'):
+            self.export(self.inventory(self.entries,grants),self.inventory(self.entries,changed))
+    def test_reverse_bucket_identity_change_is_not_hidden(self):
+        grants=self.bucket_grants();changed=copy.deepcopy(grants);changed[0]['id']='new-bucket-id'
+        with self.assertRaisesRegex(RuntimeError,'configuration changed'):
+            self.export(self.inventory(self.entries,grants),self.inventory(self.entries,changed))
+    def test_duplicate_reverse_bucket_ids_fail_closed(self):
+        grants=self.bucket_grants()
+        with self.assertRaisesRegex(RuntimeError,'Duplicate key bucket IDs'):
+            self.inventory(self.entries,[grants[0],copy.deepcopy(grants[0])])
+    def test_invalid_reverse_bucket_identity_fail_closed(self):
+        grants=self.bucket_grants();grants[0]['id']=None
+        with self.assertRaisesRegex(RuntimeError,'Invalid key bucket permission set'):
+            self.inventory(self.entries,grants)
+
 
 if __name__ == '__main__':
     if sys.argv[1:] == ['--produce']:

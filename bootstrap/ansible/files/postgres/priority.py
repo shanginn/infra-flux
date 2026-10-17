@@ -28,6 +28,8 @@ assert all(any(c['type'] == 'Ready' and c['status'] == 'True' for c in p['status
 assert sum(p['metadata']['labels'].get('role') == 'primary' for p in pods) == 1
 for pod in pods:
     site = pod['spec']['nodeName']
+    running = next(c for c in pod['spec']['containers'] if c['name'] == 'postgres')
+    assert next(e['value'] for e in running['env'] if e['name'] == 'FAILOVER_PRIORITY') == str(priorities[site]), 'Old Pod environment requires one-at-a-time replica replacement and planned switchover before reload'
     assert site in priorities and pod['metadata']['name'] == 'unified-pg-' + site + '-0'
     sts = run(['get', 'statefulset', 'unified-pg-' + site, '-n', 'database', '-o', 'json'])
     assert sts['spec']['updateStrategy']['type'] == 'OnDelete'

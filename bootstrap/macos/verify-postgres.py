@@ -11,6 +11,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import shlex
 import shutil
 import struct
@@ -191,9 +192,15 @@ print(json.dumps(proof|{'scratch_removed':True,'sql_sha256':expected['sql_sha256
 '''
 
 
-def verify_restore(metadata, sql_file, ssh_alias):
+def verify_restore(metadata, sql_file, ssh_alias, *, ssh_jump_chain=None):
     """Run only after explicit selection of the scratch restore host."""
     require(ssh_alias == 'homelab-vpn', 'Only the reviewed home scratch host is supported')
+    chain = [] if ssh_jump_chain is None else ssh_jump_chain
+    require(isinstance(chain, list) and len(chain) <= 3 and
+            all(isinstance(alias, str) and re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,63}', alias) for alias in chain),
+            'SSH jump chain must contain at most three plain aliases')
+    require(len(set(chain)) == len(chain) and ssh_alias not in chain, 'SSH jump chain contains a loop')
+    jump = ['-J', ','.join(chain)] if chain else []
     sql_file = Path(sql_file)
     require(sql_file.is_file() and not sql_file.is_symlink() and sql_file.stat().st_mode & 0o077 == 0,
             'Private restored SQL file is required')
@@ -202,6 +209,7 @@ def verify_restore(metadata, sql_file, ssh_alias):
     with sql_file.open('rb') as source:
         result = subprocess.run(['/usr/bin/ssh', '-T', '-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=yes',
                                  '-o', 'ConnectTimeout=15', '-o', 'ServerAliveInterval=15', '-o', 'ServerAliveCountMax=3',
+                                 *jump,
                                  ssh_alias, remote], stdin=source, stdout=subprocess.PIPE,
                                 stderr=subprocess.DEVNULL, timeout=4260, check=False)
     require(result.returncode == 0, 'Isolated scratch restore failed')

@@ -10,7 +10,7 @@ import shutil
 import subprocess
 import sys
 
-from backup import OWNER, STATE, PASSWORD, CONFIG, atomic_json, require, restic
+from backup import OWNER, STATE, PASSWORD, CONFIG, atomic_json, require, restic, validate_jump_chains
 
 LABEL = 'io.shanginn.infra-flux.backup'
 
@@ -31,6 +31,7 @@ def main():
     incoming = json.loads(args.config.read_text())
     require(incoming['jobs'] and all(job['component'] in ('headscale', 'etcd', 'node-config', 'garage', 'postgres') for job in incoming['jobs']),
             'Unsupported exporter')
+    validate_jump_chains(incoming['jobs'])
     repo = Path(incoming['repository']).expanduser().resolve()
     require(repo != Path.home() and not repo.is_relative_to(STATE) and not STATE.is_relative_to(repo),
             'Use a dedicated repository separate from its credentials')

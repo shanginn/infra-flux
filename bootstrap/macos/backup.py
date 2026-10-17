@@ -35,6 +35,25 @@ def require(condition, message):
         raise RuntimeError(message)
 
 
+def ssh_jump_options(chain, destination):
+    """Only configured SSH aliases, never arbitrary SSH options or shell text."""
+    require(isinstance(chain, list) and len(chain) <= 3 and
+            all(isinstance(alias, str) and re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,63}', alias) for alias in chain),
+            'SSH jump chain must contain at most three plain aliases')
+    require(len(set(chain)) == len(chain) and destination not in chain, 'SSH jump chain contains a loop')
+    return ['-J', ','.join(chain)] if chain else []
+
+
+def validate_jump_chains(jobs):
+    for job in jobs:
+        for alias in job['ssh_aliases']:
+            ssh_jump_options(job.get('ssh_jump_chain', []), alias)
+        require('restore_ssh_jump_chain' not in job or job['component'] == 'postgres',
+                'Restore SSH jump chain is only supported for PostgreSQL')
+        if job['component'] == 'postgres':
+            ssh_jump_options(job.get('restore_ssh_jump_chain', []), job.get('restore_ssh_alias'))
+
+
 def atomic_json(path, value):
     temporary = path.with_name('.' + path.name + '-' + uuid.uuid4().hex)
     try:
@@ -59,6 +78,7 @@ def settings(path):
     config['repository'] = str(Path(config['repository']).expanduser().resolve())
     require(not Path(config['repository']).is_relative_to(STATE), 'Store the repository separately from its password')
     require(config['jobs'] and len({j['name'] for j in config['jobs']}) == len(config['jobs']), 'Invalid job list')
+    validate_jump_chains(config['jobs'])
     for job in config['jobs']:
         require(job['name'] and all(c.isalnum() or c in '-_' for c in job['name']), 'Invalid job name')
         require(job['component'] in ('headscale', 'etcd', 'node-config', 'garage', 'postgres'), 'Unsupported exporter')
@@ -108,6 +128,7 @@ def export(job, alias):
     remote = shlex.join(remote_argv)
     arguments = ['/usr/bin/ssh', '-T', '-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=yes',
                  '-o', 'ConnectTimeout=15', '-o', 'ServerAliveInterval=15', '-o', 'ServerAliveCountMax=3',
+                 *ssh_jump_options(job.get('ssh_jump_chain', []), alias),
                  alias, remote]
     with subprocess.Popen(arguments, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL) as process:
         try:
@@ -154,7 +175,8 @@ def verify_large(config, job, snapshot_id, environment):
                 process.wait()
                 raise
         if job['component'] == 'postgres':
-            proof = module.verify_restore(metadata, sql, job['restore_ssh_alias'])
+            proof = module.verify_restore(metadata, sql, job['restore_ssh_alias'],
+                                          ssh_jump_chain=job.get('restore_ssh_jump_chain', []))
         return proof
 
 
@@ -244,18 +266,21 @@ def backup_job(config, job):
             summary = [json.loads(line) for line in output.stdout.splitlines() if line.strip()]
             ids = [item['snapshot_id'] for item in summary if item.get('message_type') == 'summary' and item.get('snapshot_id')]
             require(len(ids) == 1, 'Missing unambiguous restic snapshot ID')
-            proof = verify(config, job, ids[0])
-            output = restic(config, ['tag', '--add', 'verified', '--remove', 'pending', ids[0]])
-            changes = [json.loads(line) for line in output.stdout.splitlines() if line.strip()]
-            ids = [item['new_snapshot_id'] for item in changes if item.get('message_type') == 'changed']
-            require(len(ids) == 1, 'Missing verified snapshot ID')
-            outcome = {'last_success': int(time.time()), 'snapshot_id': ids[0], 'source': alias, 'ok': True}
-            if proof is not None:
-                outcome['verification'] = proof
-            return outcome
         except Exception:
             if alias == job['ssh_aliases'][-1]:
                 raise
+            continue
+        # A restore may already have started remotely. Never retry it via a
+        # different exporter after a timeout or an unconfirmed verification.
+        proof = verify(config, job, ids[0])
+        output = restic(config, ['tag', '--add', 'verified', '--remove', 'pending', ids[0]])
+        changes = [json.loads(line) for line in output.stdout.splitlines() if line.strip()]
+        ids = [item['new_snapshot_id'] for item in changes if item.get('message_type') == 'changed']
+        require(len(ids) == 1, 'Missing verified snapshot ID')
+        outcome = {'last_success': int(time.time()), 'snapshot_id': ids[0], 'source': alias, 'ok': True}
+        if proof is not None:
+            outcome['verification'] = proof
+        return outcome
 
 
 def notify_failure(metrics=False):

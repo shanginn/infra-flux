@@ -1,0 +1,85 @@
+---
+# The Flux ConfigMap may reconcile independently; Pod replacement is explicit.
+- name: Inspect Calico endpoint adoption without changing the cluster
+  hosts: control_plane
+  become: true
+  gather_facts: false
+  any_errors_fatal: true
+  vars: &calico_defaults
+    calico_endpoint_apply: false
+    calico_endpoint_review: {}
+  tasks:
+    - name: Require the complete independent topology
+      ansible.builtin.assert:
+        that:
+          - ansible_play_hosts_all | sort == ['fin', 'home', 'msk']
+          - groups['control_plane'] | sort == ansible_play_hosts_all | sort
+          - not calico_endpoint_apply | bool or not ansible_check_mode
+
+    - name: Inspect node, CA, exact DaemonSet and Pod identities
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/python3
+          - -c
+          - "{{ lookup('ansible.builtin.file', playbook_dir ~ '/files/calico-endpoint-maintenance.py') }}"
+          - inspect
+          - --node
+          - "{{ inventory_hostname }}"
+      check_mode: false
+      changed_when: false
+      register: calico_endpoint_inspection
+
+    - name: Retain the private per-node review object
+      ansible.builtin.set_fact:
+        calico_endpoint_identity: "{{ calico_endpoint_inspection.stdout | from_json }}"
+
+    - name: Require one cluster and one reviewed DaemonSet
+      ansible.builtin.assert:
+        that:
+          - groups['control_plane'] | map('extract', hostvars, 'calico_endpoint_identity') | map(attribute='review.ca_sha256') | unique | list | length == 1
+          - groups['control_plane'] | map('extract', hostvars, 'calico_endpoint_identity') | map(attribute='review.ds_uid') | unique | list | length == 1
+          - groups['control_plane'] | map('extract', hostvars, 'calico_endpoint_identity') | map(attribute='review.ds_spec_sha256') | unique | list | length == 1
+
+    - name: Show endpoint and exact identities for review without credentials
+      ansible.builtin.debug:
+        var: calico_endpoint_identity
+
+- name: Replace one reviewed Calico Pod and verify its network
+  hosts: control_plane
+  order: sorted
+  serial: 1
+  become: true
+  gather_facts: false
+  any_errors_fatal: true
+  vars: *calico_defaults
+  tasks:
+    - name: Keep inspection as the default
+      ansible.builtin.meta: end_host
+      when: not calico_endpoint_apply | bool
+
+    - name: Require explicit private reviews for every node
+      ansible.builtin.assert:
+        that:
+          - not ansible_check_mode
+          - calico_endpoint_review.keys() | list | sort == ['fin', 'home', 'msk']
+          - calico_endpoint_review[inventory_hostname] == calico_endpoint_identity.review
+
+    - name: Adopt the endpoint under the shared fault lock and verify recovery
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/python3
+          - -c
+          - "{{ lookup('ansible.builtin.file', playbook_dir ~ '/files/calico-endpoint-maintenance.py') }}"
+          - apply
+          - --node
+          - "{{ inventory_hostname }}"
+          - --ca-sha256
+          - "{{ calico_endpoint_identity.review.ca_sha256 }}"
+          - --review-json
+          - "{{ calico_endpoint_review[inventory_hostname] | to_json }}"
+      register: calico_endpoint_result
+      changed_when: (calico_endpoint_result.stdout | from_json).changed
+
+    - name: Show verified endpoint, renewal and network status
+      ansible.builtin.debug:
+        msg: "{{ calico_endpoint_result.stdout | from_json }}"

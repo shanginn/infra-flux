@@ -62,6 +62,35 @@
         that:
           - not patroni_watchdog_unit.stat.exists or '# Managed by infra-flux patroni watchdog' in (patroni_watchdog_previous.content | b64decode)
 
+    - name: Require the existing home hardware watchdog to remain enabled
+      ansible.builtin.command:
+        argv: [systemctl, is-enabled, watchdog.service]
+      changed_when: false
+      register: patroni_home_hardware_enabled
+      when: site == 'home'
+
+    - name: Require persistent home hardware watchdog enablement
+      ansible.builtin.assert:
+        that: patroni_home_hardware_enabled.stdout == 'enabled'
+      when: site == 'home'
+
+    - name: Inspect only the home preparation service enablement links
+      ansible.builtin.stat:
+        path: "{{ item }}/infra-patroni-watchdog.service"
+        follow: false
+      loop:
+        - /etc/systemd/system/multi-user.target.wants
+        - /etc/systemd/system/watchdog.service.wants
+      register: patroni_watchdog_home_links
+      when: site == 'home'
+
+    - name: Refuse foreign enablement links before migrating the home service
+      ansible.builtin.assert:
+        that:
+          - not item.stat.exists or (patroni_watchdog_unit.stat.exists and item.stat.islnk | default(false) and item.stat.lnk_source | default('') == '/etc/systemd/system/infra-patroni-watchdog.service')
+      loop: "{{ patroni_watchdog_home_links.results | default([]) }}"
+      when: site == 'home'
+
     - name: Install the preparation helper
       ansible.builtin.copy:
         src: files/postgres/prepare-watchdog.py
@@ -79,6 +108,8 @@
       changed_when: false
 
     - name: Install startup ordering that preserves the existing home watchdog
+      # Home watchdog starts after multi-user.target. Target enablement or a
+      # Before=kubelet edge would create an ordering cycle on that host.
       ansible.builtin.copy:
         dest: /etc/systemd/system/infra-patroni-watchdog.service
         mode: '0644'
@@ -88,13 +119,25 @@
           Description=Prepare independent software watchdog for Patroni
           After=systemd-udevd.service systemd-modules-load.service{{ ' watchdog.service' if site == 'home' else '' }}
           {{ 'Requires=watchdog.service' if site == 'home' else '' }}
-          Before=kubelet.service
+          {{ '' if site == 'home' else 'Before=kubelet.service' }}
           [Service]
           Type=oneshot
           RemainAfterExit=yes
           ExecStart=/usr/local/sbin/infra-prepare-patroni-watchdog{{ ' --preserve-home-watchdog' if site == 'home' else '' }}
           [Install]
-          WantedBy=multi-user.target
+          WantedBy={{ 'watchdog.service' if site == 'home' else 'multi-user.target' }}
+
+    - name: Remove only the verified legacy home target link
+      ansible.builtin.file:
+        path: /etc/systemd/system/multi-user.target.wants/infra-patroni-watchdog.service
+        state: absent
+      when: site == 'home' and patroni_watchdog_home_links.results[0].stat.exists
+
+    - name: Enable home preparation through the existing hardware watchdog service
+      ansible.builtin.command:
+        argv: [systemctl, enable, infra-patroni-watchdog.service]
+      changed_when: not patroni_watchdog_home_links.results[1].stat.exists
+      when: site == 'home'
 
     - name: Load the approved new device without opening or arming it
       ansible.builtin.systemd_service:

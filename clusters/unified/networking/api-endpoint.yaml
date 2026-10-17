@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kubernetes-services-endpoint
+  namespace: kube-system
+  annotations:
+    infra.shanginn.io/managed-by: infra-flux/calico-endpoint-v1
+data:
+  # calico-node uses the host network and inherits the node's /etc/hosts.
+  # The local proxy reaches all control planes without ClusterIP/kube-proxy.
+  KUBERNETES_SERVICE_HOST: api.unified.internal
+  KUBERNETES_SERVICE_PORT: "7443"

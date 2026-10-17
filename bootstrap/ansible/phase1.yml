@@ -1,0 +1,293 @@
+---
+- name: Prepare packages for the unified cluster without bootstrapping it
+  hosts: unified
+  become: true
+  gather_facts: true
+  serial: 1
+  any_errors_fatal: true
+
+  pre_tasks:
+    - name: Require the supported operating system and architecture
+      ansible.builtin.assert:
+        that:
+          - ansible_facts.distribution == 'Debian'
+          - ansible_facts.distribution_major_version == '13'
+          - ansible_facts.architecture == 'x86_64'
+        fail_msg: Phase 1 supports Debian 13 amd64 hosts.
+
+    - name: Inspect existing cluster paths
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop: "{{ phase1_cluster_paths }}"
+      register: phase1_cluster_stats
+
+    - name: Refuse to change an existing Kubernetes installation
+      ansible.builtin.assert:
+        that:
+          - not item.stat.exists
+        fail_msg: "Existing cluster state at {{ item.item }}; phase 1 cannot manage this host."
+      loop: "{{ phase1_cluster_stats.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+
+    - name: Read the package inventory without requiring python3-apt
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/dpkg-query
+          - --show
+          - --showformat=${binary:Package}\n
+      register: phase1_dpkg_inventory
+      changed_when: false
+      check_mode: false
+
+    - name: Record package names for read-only ownership checks
+      ansible.builtin.set_fact:
+        phase1_packages_before: "{{ phase1_dpkg_inventory.stdout_lines }}"
+
+    - name: Inspect existing services
+      ansible.builtin.service_facts:
+
+    - name: Refuse conflicting runtime packages
+      ansible.builtin.assert:
+        that:
+          - item not in phase1_packages_before
+        fail_msg: "Existing {{ item }} package must be reviewed before preparing a new runtime."
+      loop: "{{ phase1_conflicting_packages }}"
+
+    - name: Inspect containerd configuration and ownership marker
+      ansible.builtin.stat:
+        path: "{{ item }}"
+        checksum_algorithm: sha256
+      loop:
+        - "{{ containerd_config_path }}"
+        - "{{ phase1_marker }}"
+        - /run/containerd/containerd.sock
+        - /var/lib/containerd
+      register: phase1_files
+
+    - name: Read existing phase 1 marker
+      ansible.builtin.slurp:
+        src: "{{ phase1_marker }}"
+      when: phase1_files.results[1].stat.exists
+      register: phase1_marker_content
+
+    - name: Calculate managed configuration checksums
+      ansible.builtin.set_fact:
+        phase1_previous: "{{ (phase1_marker_content.content | b64decode | from_json) if phase1_files.results[1].stat.exists else {} }}"
+        phase1_desired_sha256: "{{ lookup('ansible.builtin.template', 'templates/containerd.toml.j2') | hash('sha256') }}"
+        phase1_existing_sha256: "{{ phase1_files.results[0].stat.checksum | default('') }}"
+
+    - name: Verify marker ownership
+      ansible.builtin.assert:
+        that:
+          - phase1_previous.managed_by | default('') == phase1_owner
+        fail_msg: Existing phase 1 marker belongs to an unknown owner.
+      when: phase1_files.results[1].stat.exists
+
+    - name: Refuse unmanaged or manually changed containerd configuration
+      ansible.builtin.assert:
+        that:
+          - phase1_previous.managed_by | default('') == phase1_owner
+          - phase1_existing_sha256 == phase1_previous.containerd_config_sha256 | default('')
+        fail_msg: Existing containerd configuration is not an unchanged managed file; inspect it before proceeding.
+      when: phase1_files.results[0].stat.exists
+
+    - name: Refuse an existing runtime without known managed configuration
+      ansible.builtin.assert:
+        that:
+          - >-
+            ('containerd.service' not in ansible_facts.services and 'containerd.io' not in phase1_packages_before and
+             not phase1_files.results[2].stat.exists and not phase1_files.results[3].stat.exists) or
+            phase1_previous.managed_by | default('') == phase1_owner
+        fail_msg: An existing containerd runtime has no phase 1 ownership evidence.
+
+    - name: Inspect existing Tailscale state, socket and binaries
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop: "{{ phase1_tailscale_paths }}"
+      register: phase1_tailscale_files
+
+    - name: Refuse an existing Tailscale installation without ownership
+      ansible.builtin.assert:
+        that:
+          - >-
+            phase1_previous.managed_by | default('') == phase1_owner or
+            ('tailscale' not in phase1_packages_before and
+             'tailscaled.service' not in ansible_facts.services and
+             phase1_tailscale_files.results | selectattr('stat.exists') | list | length == 0)
+        fail_msg: Existing Tailscale package, service or state has no phase 1 ownership marker; inspect it separately.
+
+    - name: Require a running managed daemon before inspecting saved VPN state
+      ansible.builtin.assert:
+        that:
+          - ansible_facts.services.get('tailscaled.service', {}).get('state', 'stopped') == 'running'
+        fail_msg: Managed Tailscale has saved state but is stopped; inspect its registration separately before phase 1.
+      when:
+        - phase1_previous.managed_by | default('') == phase1_owner
+        - phase1_tailscale_files.results[1].stat.exists
+
+    - name: Read managed Tailscale registration state without changing it
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/tailscale
+          - status
+          - --json
+      register: phase1_tailscale_status
+      changed_when: false
+      check_mode: false
+      failed_when: false
+      when:
+        - phase1_previous.managed_by | default('') == phase1_owner
+        - ansible_facts.services.get('tailscaled.service', {}).get('state', 'stopped') == 'running'
+
+    - name: Refuse phase 1 after VPN enrollment
+      ansible.builtin.assert:
+        that:
+          - phase1_tailscale_status.rc == 0
+          - (phase1_tailscale_status.stdout | from_json).BackendState | default('') in ['NeedsLogin', 'NoState']
+        fail_msg: Phase 1 requires unauthenticated Tailscale (NeedsLogin or NoState); an enrolled or unknown VPN state must be managed separately.
+      when: phase1_tailscale_status is not skipped
+
+    - name: Refuse a running kubelet
+      ansible.builtin.assert:
+        that:
+          - ansible_facts.services.get('kubelet.service', {}).get('state', 'stopped') != 'running'
+        fail_msg: A running kubelet requires a separate review; phase 1 must not stop a live cluster.
+
+  tasks:
+    - name: Install repository trust prerequisites without starting services
+      ansible.builtin.apt:
+        name:
+          - ca-certificates
+          - python3-apt
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+        install_recommends: false
+        fail_on_autoremove: true
+        policy_rc_d: 101
+        auto_install_module_deps: true
+
+    - name: Collect package facts after installing the Python APT dependency
+      ansible.builtin.package_facts:
+        manager: apt
+
+    - name: Create phase 1 configuration directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+      loop:
+        - /etc/apt/keyrings
+        - /etc/containerd
+        - /etc/infra-flux
+
+    - name: Download official repository signing keys over verified HTTPS
+      ansible.builtin.get_url:
+        url: "{{ item.key_url }}"
+        dest: "{{ item.key_path }}"
+        owner: root
+        group: root
+        mode: '0644'
+        validate_certs: true
+      loop: "{{ phase1_repositories }}"
+      loop_control:
+        label: "{{ item.name }}"
+
+    - name: Configure scoped signed official package repositories
+      ansible.builtin.copy:
+        dest: "/etc/apt/sources.list.d/infra-flux-{{ item.name }}.list"
+        content: "{{ item.repo }}\n"
+        owner: root
+        group: root
+        mode: '0644'
+      loop: "{{ phase1_repositories }}"
+      loop_control:
+        label: "{{ item.name }}"
+
+    - name: Render containerd configuration before its first installation
+      ansible.builtin.template:
+        src: containerd.toml.j2
+        dest: "{{ containerd_config_path }}"
+        owner: root
+        group: root
+        mode: '0644'
+      register: phase1_runtime_config
+
+    - name: Record ownership and expected configuration checksum
+      ansible.builtin.copy:
+        dest: "{{ phase1_marker }}"
+        owner: root
+        group: root
+        mode: '0644'
+        content: |
+          {{ {'managed_by': phase1_owner, 'containerd_config_sha256': phase1_desired_sha256} | to_nice_json }}
+
+    - name: Install exact runtime, Kubernetes and VPN package versions without starting services
+      ansible.builtin.apt:
+        name:
+          - "containerd.io={{ containerd_package_version }}"
+          - "kubeadm={{ kubernetes_package_version }}"
+          - "kubelet={{ kubernetes_package_version }}"
+          - "kubectl={{ kubernetes_package_version }}"
+          - "cri-tools={{ cri_tools_package_version }}"
+          - "tailscale={{ tailscale_package_version }}"
+        state: present
+        update_cache: true
+        install_recommends: false
+        fail_on_autoremove: true
+        allow_downgrade: false
+        allow_change_held_packages: true
+        policy_rc_d: 101
+      register: phase1_packages
+
+    - name: Hold explicitly managed packages against incidental upgrades
+      ansible.builtin.dpkg_selections:
+        name: "{{ item }}"
+        selection: hold
+      loop:
+        - containerd.io
+        - kubeadm
+        - kubelet
+        - kubectl
+        - cri-tools
+        - tailscale
+
+    - name: Keep kubelet stopped until intentional cluster bootstrap
+      ansible.builtin.systemd_service:
+        name: kubelet
+        state: stopped
+        enabled: false
+        daemon_reload: true
+
+    - name: Validate containerd configuration parsing
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/containerd
+          - --config
+          - "{{ containerd_config_path }}"
+          - config
+          - dump
+      changed_when: false
+      when: not ansible_check_mode
+
+    - name: Start or restart only the managed containerd service
+      ansible.builtin.systemd_service:
+        name: containerd
+        state: "{{ 'restarted' if (phase1_runtime_config.changed or phase1_packages.changed) else 'started' }}"
+        enabled: true
+        daemon_reload: true
+
+    - name: Enable the Tailscale daemon without registration or network preferences
+      ansible.builtin.systemd_service:
+        name: tailscaled
+        state: started
+        enabled: true
+
+    - name: Report the deliberately incomplete bootstrap
+      ansible.builtin.debug:
+        msg: >-
+          Phase 1 packages are prepared. Containerd and unauthenticated tailscaled are enabled;
+          kubelet is stopped. No Kubernetes cluster or VPN registration has been created.

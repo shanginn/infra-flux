@@ -1,0 +1,23 @@
+all:
+  children:
+    unified:
+      vars:
+        ansible_user: root
+        ansible_python_interpreter: /usr/bin/python3
+      children:
+        control_plane:
+          hosts:
+            home:
+              ansible_host: homelab-vpn
+              site: home
+            msk:
+              ansible_host: k8s-msk
+              site: msk
+            fin:
+              ansible_host: k8s-fin
+              site: fin
+        workers:
+          hosts:
+            home:
+            msk:
+            fin:

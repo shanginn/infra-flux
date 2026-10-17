@@ -1,3 +1,9 @@
+# Единый kubeadm-кластер
+
+Подготовка Debian 13 к установке Kubernetes описана в
+[bootstrap/ansible](bootstrap/ansible/README.md). Версии пакетов, inventory и
+конфигурация containerd задаются файлами в этой директории.
+
 # Установка
 ## Токен GitHub
 https://github.com/settings/tokens?type=beta

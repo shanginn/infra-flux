@@ -1,0 +1,55 @@
+# Pinned amd64 package versions.
+kubernetes_minor: v1.36
+kubernetes_package_version: 1.36.5-1.1
+cri_tools_package_version: 1.36.0-1.1
+containerd_package_version: 2.3.6-1~debian.13~trixie
+tailscale_package_version: 1.104.1
+
+kubernetes_roles:
+  - control-plane
+  - worker
+
+phase1_owner: infra-flux/ansible/phase1
+phase1_marker: /etc/infra-flux/phase1.json
+containerd_config_path: /etc/containerd/config.toml
+
+phase1_tailscale_paths:
+  - /var/lib/tailscale
+  - /var/lib/tailscale/tailscaled.state
+  - /run/tailscale/tailscaled.sock
+  - /usr/bin/tailscale
+  - /usr/sbin/tailscaled
+
+phase1_cluster_paths:
+  - /etc/kubernetes/admin.conf
+  - /etc/kubernetes/kubelet.conf
+  - /etc/kubernetes/manifests/kube-apiserver.yaml
+  - /etc/kubernetes/manifests/etcd.yaml
+  - /var/lib/kubelet/config.yaml
+  - /var/lib/etcd/member
+  - /etc/rancher/k3s
+  - /var/lib/rancher/k3s
+  - /etc/rancher/rke2
+  - /var/lib/rancher/rke2
+
+phase1_conflicting_packages:
+  - containerd
+  - docker.io
+  - docker-ce
+  - docker-ce-cli
+  - moby-engine
+  - podman
+
+phase1_repositories:
+  - name: docker
+    key_url: https://download.docker.com/linux/debian/gpg
+    key_path: /etc/apt/keyrings/infra-flux-docker.asc
+    repo: deb [arch=amd64 signed-by=/etc/apt/keyrings/infra-flux-docker.asc] https://download.docker.com/linux/debian trixie stable
+  - name: kubernetes
+    key_url: https://pkgs.k8s.io/core:/stable:/v1.36/deb/Release.key
+    key_path: /etc/apt/keyrings/infra-flux-kubernetes.asc
+    repo: deb [signed-by=/etc/apt/keyrings/infra-flux-kubernetes.asc] https://pkgs.k8s.io/core:/stable:/v1.36/deb/ /
+  - name: tailscale
+    key_url: https://pkgs.tailscale.com/stable/debian/trixie.noarmor.gpg
+    key_path: /etc/apt/keyrings/infra-flux-tailscale.gpg
+    repo: deb [signed-by=/etc/apt/keyrings/infra-flux-tailscale.gpg] https://pkgs.tailscale.com/stable/debian trixie main

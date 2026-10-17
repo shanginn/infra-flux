@@ -142,6 +142,16 @@ class SafetyTests(unittest.TestCase):
         with patch.object(m, 'get', return_value=None): self.assertIsNone(m.endpoint_config())
         with patch.object(m, 'get', return_value=None), self.assertRaises(RuntimeError): m.endpoint_config(True)
 
+    def test_api_omits_only_default_false_host_network(self):
+        with patch.object(m, 'get', return_value={'spec': {'clusterIP': '192.0.2.1'}}): wanted = m.network_pod(record())
+        actual = copy.deepcopy(wanted); actual['metadata']['uid'] = 'probe-uid'
+        del actual['spec']['hostNetwork']
+        m.validate_network_pod(actual, wanted, record())
+        actual['spec']['hostNetwork'] = True
+        with self.assertRaises(RuntimeError): m.validate_network_pod(actual, wanted, record())
+        del actual['spec']['hostNetwork']; del actual['spec']['automountServiceAccountToken']
+        with self.assertRaises(RuntimeError): m.validate_network_pod(actual, wanted, record())
+
     def test_verified_rerun_never_deletes(self):
         r = {**record(), 'phase': 'verified', 'member_ids': [1,2,3], 'network_cleanup': True, 'network_proof': {'dns_resolved': True}}
         args = argparse.Namespace(node='home', ca_sha256='ca', review_json=json.dumps(r['review']))

@@ -323,7 +323,11 @@ def validate_network_pod(pod, desired, record):
         if isinstance(wanted, dict): return isinstance(actual, dict) and all(k in actual and subset(actual[k], v) for k, v in wanted.items())
         if isinstance(wanted, list): return isinstance(actual, list) and len(actual) == len(wanted) and all(subset(a, b) for a, b in zip(actual, wanted))
         return actual == wanted
-    require(subset(pod['spec'], desired['spec']) and not pod['metadata'].get('ownerReferences'), 'Probe Pod specification differs')
+    # PodSpec.hostNetwork is an omitempty bool: the API omits explicit false.
+    # Normalize only that documented zero value; do not relax other fields.
+    actual_spec = copy.deepcopy(pod['spec'])
+    actual_spec.setdefault('hostNetwork', False)
+    require(subset(actual_spec, desired['spec']) and not pod['metadata'].get('ownerReferences'), 'Probe Pod specification differs')
 
 
 def disposable_network_check(record):
@@ -343,7 +347,7 @@ def disposable_network_check(record):
             phase = pod.get('status', {}).get('phase')
             require(phase != 'Failed', 'Disposable CNI/DNS/ClusterIP probe failed')
             if phase == 'Succeeded':
-                require(pod['status'].get('podIP') and not pod['spec']['hostNetwork'], 'Probe did not obtain a CNI Pod IP')
+                require(pod['status'].get('podIP') and pod['spec'].get('hostNetwork', False) is False, 'Probe did not obtain a CNI Pod IP')
                 proof = json.loads(kube(['logs', '-n', NAMESPACE, name, '-c', 'check']))
                 require(proof.get('dns_resolved') is True and proof.get('cluster_ip_tls') is True and proof.get('http_status') in (200, 401, 403), 'Unexpected network proof')
                 record['network_proof'] = proof; save_record(record)

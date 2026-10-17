@@ -286,6 +286,15 @@ def inventory_admin(pod):
             'All buckets must have exactly one global alias and no local aliases')
     details = [admin_api(pod, 'GetBucketInfo', {'id': b['id']}) for b in sorted(buckets, key=lambda b: b['id'])]
     for bucket in details:
+        # Garage returns this permission set without a stable order. Normalize only
+        # this set, retaining names/permissions/IDs so real configuration drift fails.
+        entries = bucket.get('keys')
+        require(isinstance(entries, list) and all(isinstance(entry, dict) and
+                isinstance(entry.get('accessKeyId'), str) and entry['accessKeyId'] for entry in entries),
+                'Invalid bucket key permission set')
+        ids = [entry['accessKeyId'] for entry in entries]
+        require(len(ids) == len(set(ids)), 'Duplicate bucket key IDs')
+        bucket['keys'] = sorted(entries, key=lambda entry: entry['accessKeyId'])
         # These counters are intentionally excluded from configuration comparison.
         for key in ('objects', 'bytes', 'unfinishedUploads', 'unfinishedMultipartUploads', 'unfinishedMultipartUploadParts', 'unfinishedMultipartUploadBytes'):
             bucket.pop(key, None)

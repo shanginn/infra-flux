@@ -10,6 +10,10 @@
 - [Garage: ёмкость, доступ и расширение](clusters/unified/garage/README.md)
 - [Публичный DNS и ingress](clusters/unified/public-dns/README.md)
 - [Мониторинг](clusters/unified/monitoring/README.md), [резервные копии на Mac](bootstrap/macos/README.md) и [управляемые отказные проверки](bootstrap/tests/README.md)
+- [Grafana и панели ресурсов](clusters/unified/observability/README.md): https://grafana.apps.shanginn.io
+- [Логи Kubernetes в Loki](clusters/unified/observability/logging/README.md)
+- [GlitchTip и подключение SDK приложений](clusters/unified/error-tracking/README.md): https://errors.apps.shanginn.io
+- [Подготовка БД и секретов наблюдаемости](bootstrap/ansible/OBSERVABILITY.md), [сертификаты HTTPS](clusters/unified/certificates/README.md)
 
 Конфигурация единого кластера находится в `clusters/unified`. Каталоги
 `clusters/contabo` и `clusters/rubase` описывают прежние отдельные кластеры;

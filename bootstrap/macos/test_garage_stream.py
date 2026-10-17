@@ -12,6 +12,7 @@ import sys
 import tarfile
 import tempfile
 import unittest
+from unittest.mock import patch
 
 spec = importlib.util.spec_from_file_location('garage_stream', Path(__file__).with_name('garage-stream.py'))
 g = importlib.util.module_from_spec(spec)
@@ -151,6 +152,48 @@ class StreamTests(unittest.TestCase):
             # Repository files must not contain the source access-key test value in plaintext.
             self.assertTrue(all(b'synthetic-secret' not in file.read_bytes() for file in (root / 'repo').rglob('*') if file.is_file()))
 
+
+
+class PermissionOrderTests(unittest.TestCase):
+    def setUp(self):
+        self.entries = [
+            {'accessKeyId':'synthetic-a','name':'backup','permissions':{'read':True,'write':False,'owner':False}},
+            {'accessKeyId':'synthetic-b','name':'app','permissions':{'read':True,'write':True,'owner':False}},
+        ]
+    def inventory(self, entries):
+        def api(pod, name, body=None):
+            if name == 'ListBuckets':return [{'id':'test','globalAliases':['example'],'localAliases':[]}]
+            if name == 'GetBucketInfo':return {'id':'test','globalAliases':['example'],'localAliases':[], 'keys':copy.deepcopy(entries),'objects':2,'bytes':128000}
+            if name == 'ListKeys':return [{'id':'synthetic-a'},{'id':'synthetic-b'}]
+            if name == 'GetKeyInfo':return {'accessKeyId':body['id'],'secretAccessKey':'synthetic-secret-'+body['id']}
+            raise AssertionError('Unexpected API method')
+        with patch.object(g,'admin_api',side_effect=api):return g.inventory_admin('synthetic-pod')
+    def export(self, before, after):
+        stream=io.BytesIO()
+        g.export_stream(Client(),before,{'name':'test'},stream,LIMIT,10,lambda:after)
+        return g.verify_stream(io.BytesIO(stream.getvalue()),LIMIT,10,'test')
+    def test_reordered_permission_set_exports_and_verifies(self):
+        before=self.inventory(self.entries);after=self.inventory(list(reversed(self.entries)))
+        self.assertEqual(self.export(before,after)['objects'],2)
+        self.assertEqual(before['buckets'][0]['keys'],self.entries)
+    def test_permission_change_is_not_hidden(self):
+        changed=copy.deepcopy(self.entries);changed[0]['permissions']['write']=True
+        with self.assertRaisesRegex(RuntimeError,'configuration changed'):
+            self.export(self.inventory(self.entries),self.inventory(changed))
+    def test_key_name_change_is_not_hidden(self):
+        changed=copy.deepcopy(self.entries);changed[0]['name']='renamed'
+        with self.assertRaisesRegex(RuntimeError,'configuration changed'):
+            self.export(self.inventory(self.entries),self.inventory(changed))
+    def test_key_identity_change_is_not_hidden(self):
+        changed=copy.deepcopy(self.entries);changed[0]['accessKeyId']='synthetic-new-key'
+        with self.assertRaisesRegex(RuntimeError,'configuration changed'):
+            self.export(self.inventory(self.entries),self.inventory(changed))
+    def test_duplicate_key_ids_fail_closed(self):
+        with self.assertRaisesRegex(RuntimeError,'Duplicate bucket key IDs'):
+            self.inventory([self.entries[0],copy.deepcopy(self.entries[0])])
+    def test_invalid_key_identity_fail_closed(self):
+        changed=copy.deepcopy(self.entries);changed[0]['accessKeyId']=None
+        with self.assertRaisesRegex(RuntimeError,'Invalid bucket key permission set'):self.inventory(changed)
 
 if __name__ == '__main__':
     if sys.argv[1:] == ['--produce']:

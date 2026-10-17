@@ -14,6 +14,11 @@ ansible-playbook -i "$inventory" bootstrap/ansible/observability.yml -e "@$vars"
 Garage bucket `glitchtip` с квотой 1 GiB/100000 объектов, ограниченный S3 key и
 три runtime Secret. Даёт существующему backup key read-only доступ к новому bucket.
 Роли не имеют superuser/CREATEDB/CREATEROLE/REPLICATION, лимиты соединений 12/32.
+Первую миграцию Grafana запускать одним экземпляром; второй включать после
+готовности `/api/health`. Для её отдельной DB `idle_in_transaction_session_timeout`
+равен 1800s: Grafana держит migration advisory lock в idle transaction, пока
+другие соединения выполняют DDL. Короткий timeout разрывает эту блокировку.
+GlitchTip DB сохраняет 60s и отдельно увеличивает timeout migration Job.
 Первый пользователь GlitchTip создаётся отдельным migration Job, не этим playbook:
 см. [error-tracking](../../clusters/unified/error-tracking/README.md).
 

@@ -218,7 +218,10 @@ with psycopg.connect(host='/run/postgresql',user='postgres',dbname='postgres',au
    else:
     assert db==(name,marker),'Existing database is unowned or requires partial-creation recovery'
    q.execute(sql.SQL('REVOKE ALL ON DATABASE {} FROM PUBLIC').format(sql.Identifier(name)))
-   q.execute(sql.SQL('ALTER DATABASE {} SET idle_in_transaction_session_timeout TO {}').format(sql.Identifier(name),sql.Literal('60s')))
+   # Grafana holds its migration advisory lock in an otherwise idle transaction
+   # while executing migrations through other connections. Keep that lock alive
+   # for the bounded initial startup window; GlitchTip overrides only its Job.
+   q.execute(sql.SQL('ALTER DATABASE {} SET idle_in_transaction_session_timeout TO {}').format(sql.Identifier(name),sql.Literal('1800s' if name=='grafana' else '60s')))
 print(json.dumps({'databases':['grafana','glitchtip'],'roles_scoped':True}))
 '''
 

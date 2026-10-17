@@ -9,7 +9,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata: {name: grafana}
 spec:
-  replicas: 0
+  replicas: 1
   strategy: {type: RollingUpdate, rollingUpdate: {maxSurge: 0, maxUnavailable: 1}}
   selector: {matchLabels: {app: grafana}}
   template:
@@ -47,7 +47,7 @@ spec:
             requests: {cpu: 50m, memory: 128Mi, ephemeral-storage: 128Mi}
             limits: {cpu: '1', memory: 512Mi, ephemeral-storage: 256Mi}
           securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
-          startupProbe: {httpGet: {path: /api/health, port: http, httpHeaders: [{name: Host, value: grafana.apps.shanginn.io}]}, periodSeconds: 10, timeoutSeconds: 5, failureThreshold: 60}
+          startupProbe: {httpGet: {path: /api/health, port: http, httpHeaders: [{name: Host, value: grafana.apps.shanginn.io}]}, periodSeconds: 10, timeoutSeconds: 5, failureThreshold: 180}
           readinessProbe: {httpGet: {path: /api/health, port: http, httpHeaders: [{name: Host, value: grafana.apps.shanginn.io}]}, periodSeconds: 10, timeoutSeconds: 5}
           # Liveness checks the process listener; a database failover must not cause a restart loop.
           livenessProbe: {tcpSocket: {port: http}, periodSeconds: 30, timeoutSeconds: 5}

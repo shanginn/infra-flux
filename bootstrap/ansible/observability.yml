@@ -10,7 +10,7 @@
     observability_timeout_review: {}
     # The only previous deployed helper accepted by this revision. Future
     # maintenance must review its exact hash instead of matching an owner string.
-    observability_previous_helper_sha256: 07f92e46bffd4793f215d296d78338ad49a5578e96c10389f4ddb78c420bb4c3
+    observability_previous_helper_sha256: ffc8e38426b261d1b8d82a14cbdb0194509c8dc97c28341b41649cfe964ed63f
   tasks:
     - name: Keep runtime unchanged unless explicitly enabled
       ansible.builtin.meta: end_play

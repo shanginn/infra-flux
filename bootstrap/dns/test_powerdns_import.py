@@ -122,7 +122,8 @@ class ImportTests(unittest.TestCase):
         payload = {'tables': tables, 'sequences_after': sequences}
         target = {**f.SOURCE, 'label': 'target-test', 'system_identifier': '9876543210'}
         plan = {'operation_id': '00000000-0000-4000-8000-000000000002', 'target': target,
-                'snapshot_sha256': 'b' * 64, 'target_fence_sha256': 'c' * 64}
+                'snapshot_sha256': 'b' * 64, 'target_fence_sha256': 'c' * 64,
+                'target_sequences_before': copy.deepcopy(Database().sequences)}
         return Database(failure), plan, payload
 
     def run_case(self, directory, failure=None):
@@ -201,7 +202,7 @@ class ImportTests(unittest.TestCase):
             self.assertEqual(db.sequence_count, 0)
             self.assertFalse(journal.value['verified'])
 
-    def test_changed_seed_or_preused_sequence_refused_before_intent(self):
+    def test_changed_seed_or_unreviewed_sequence_refused_before_intent(self):
         for mode in ('seed', 'sequence'):
             with self.subTest(mode=mode), tempfile.TemporaryDirectory() as directory:
                 db, plan, payload, journal, guard = self.run_case(directory)
@@ -213,6 +214,42 @@ class ImportTests(unittest.TestCase):
                     m.import_once(db, plan, payload, {}, None, journal)
                 self.assertFalse(journal.path.exists())
                 self.assertEqual(db.insert_count, 0)
+
+    def test_reviewed_consumed_seed_sequences_keep_exact_source_values(self):
+        with tempfile.TemporaryDirectory() as directory:
+            db, plan, payload, journal, guard = self.run_case(directory)
+            for name in ('domains_id_seq', 'records_id_seq', 'domainmetadata_id_seq'):
+                db.sequences[name] = {'last_value': 1, 'is_called': True}
+                # A source equal or ahead of that preimage is allowed.
+                payload['sequences_after'][name] = {'last_value': 10, 'is_called': True}
+            plan['target_sequences_before'] = copy.deepcopy(db.sequences)
+            with guard:
+                result = m.import_once(db, plan, payload, {}, None, journal)
+            self.assertTrue(result['verified'])
+            self.assertEqual(result['sequences_before'], plan['target_sequences_before'])
+            self.assertEqual(db.sequences, payload['sequences_after'])
+
+    def test_reviewed_preimage_cannot_move_next_value_backwards(self):
+        for prior, desired in (({'last_value': 10, 'is_called': True}, {'last_value': 10, 'is_called': False}),
+                               ({'last_value': 11, 'is_called': False}, {'last_value': 9, 'is_called': True})):
+            with self.subTest(prior=prior), tempfile.TemporaryDirectory() as directory:
+                db, plan, payload, journal, guard = self.run_case(directory)
+                name = 'comments_id_seq'
+                db.sequences[name] = prior
+                plan['target_sequences_before'] = copy.deepcopy(db.sequences)
+                payload['sequences_after'][name] = desired
+                with guard, self.assertRaises(m.snapshot_lib.InvalidSnapshot):
+                    m.import_once(db, plan, payload, {}, None, journal)
+                self.assertFalse(journal.path.exists())
+                self.assertEqual(db.insert_count, 0)
+                self.assertEqual(db.sequence_count, 0)
+
+    def test_sequence_preimage_requires_all_six_typed_bounded_pairs(self):
+        before = Database().sequences
+        for changed in ({}, {**before, 'records_id_seq': {'last_value': True, 'is_called': False}},
+                        {**before, 'records_id_seq': {'last_value': 2_000_000_000, 'is_called': True}}):
+            with self.subTest(changed=changed), self.assertRaises(m.snapshot_lib.InvalidSnapshot):
+                m.validate_sequence_preimage(changed, before)
 
     def test_journal_cannot_be_reused_and_unknown_receipt_is_never_overwritten(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -276,7 +313,8 @@ class ImportTests(unittest.TestCase):
             'operation_id': '00000000-0000-4000-8000-000000000002', 'source': f.SOURCE, 'target': target,
             'writer_role': 'powerdns_api', 'snapshot_sha256': snapshot['sha256'],
             'source_fence_sha256': m.digest(source_fence), 'target_fence_sha256': m.digest(target_fence),
-            'target_schema_sha256': target_fence['after']['schema_sha256'], 'target_seed_sha256': m.digest(m.health_seed())}
+            'target_schema_sha256': target_fence['after']['schema_sha256'], 'target_seed_sha256': m.digest(m.health_seed()),
+            'target_sequences_before': copy.deepcopy(Database().sequences)}
         return plan, snapshot, source_fence, target_fence, fence
 
     def test_actual_final_snapshot_and_sql_fence_contract_agree(self):

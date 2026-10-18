@@ -34,6 +34,7 @@ The private plan has exactly these keys:
 | `source_fence_sha256`, `target_fence_sha256` | Canonical JSON digests of the exact SQL fence receipts |
 | `target_schema_sha256` | Target fence receipt's `after.schema_sha256` |
 | `target_seed_sha256` | Canonical digest of `powerdns-import.py`'s `health_seed()` |
+| `target_sequences_before` | All six reviewed primary `last_value` / `is_called` pairs observed while fenced |
 
 All receipt and plan digests use `powerdns-snapshot.py`'s canonical JSON function,
 not hashes of whitespace-formatted files. Validate without connecting:
@@ -50,8 +51,12 @@ For the reviewed import, use the same inputs with `import-once`, adding
 `--connection-file /private/path/target-connection.json` and
 `--state-dir /private/path/import-state`. Reuse that same state directory for the
 target database across operations; a new operation UUID does not bypass its
-existing receipt. Import requires an unused target: exactly the four seed rows
-and all six sequences at `(1,false)`.
+existing receipt. Import requires exactly the four owned seed rows and all six primary sequence
+pairs equal to the reviewed private plan. The seed may already have consumed
+ordinary IDs before it was moved to its reserved range. Never reset those
+sequences to make a precondition pass. The source next value must be equal to or
+greater than the reviewed target next value for every sequence; a backwards
+move is rejected before any import intent or SQL write.
 
 The row transaction locks the seven tables with a two-second lock timeout,
 inserts explicit IDs and columns, and compares every row plus the exact seed
@@ -61,7 +66,11 @@ production. The target's `health.test` domain ID `2000000000` and record IDs
 zone is retained along with all other source rows.
 
 After row commit, the tool restores all six source `last_value`/`is_called` pairs
-and verifies them individually and together. It never uses `MAX(id)` over the
+and verifies them individually and together. Later replica verification must
+wait for replay beyond the post-import WAL boundary: ordinary `nextval` can log
+ahead of the primary, so pre-import standby sequence values are not the primary
+preimage. See the [PostgreSQL 18 sequence WAL implementation](https://github.com/postgres/postgres/blob/REL_18_STABLE/src/backend/commands/sequence.c).
+This does not relax the exact post-import comparison while writes stay fenced. It never uses `MAX(id)` over the
 reserved seed IDs. A durable intent precedes the row commit and every `setval`.
 `setval` is not rolled back by transaction failure, so a partial result must be
 inspected rather than replayed. See [PostgreSQL sequence semantics](https://www.postgresql.org/docs/18/functions-sequence.html).

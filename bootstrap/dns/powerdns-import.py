@@ -34,7 +34,7 @@ digest = snapshot_lib.sha256
 LOCK_NAME = 'infra-flux/powerdns-cutover'
 PLAN_KEYS = {'format', 'kind', 'operation_id', 'source', 'target', 'writer_role',
              'snapshot_sha256', 'source_fence_sha256', 'target_fence_sha256',
-             'target_schema_sha256', 'target_seed_sha256'}
+             'target_schema_sha256', 'target_seed_sha256', 'target_sequences_before'}
 
 
 def health_seed():
@@ -83,7 +83,21 @@ def validate_inputs(plan, snapshot, source_fence, target_fence, fence_lib, *, cu
     require(payload['capture']['fence'] == source_fence, 'Snapshot is not bound to this source fence')
     require(target_fence['after']['schema_sha256'] == plan['target_schema_sha256'], 'Target schema preimage differs')
     require(plan['target_seed_sha256'] == digest(health_seed()), 'Exact owned health seed required')
+    validate_sequence_preimage(plan['target_sequences_before'], payload['sequences_after'])
     return payload
+
+
+def validate_sequence_preimage(before, desired):
+    # The owned health seed can have consumed ordinary IDs before its reserved-ID
+    # migration. Bind the reviewed primary preimage; never reset it to a guess.
+    empty = {table: [] for table in snapshot_lib.TABLES}
+    snapshot_lib.validate_sequences(before, empty)
+    snapshot_lib.validate_sequences(desired, empty)
+    for name, prior in before.items():
+        target = desired[name]
+        require(target['last_value'] + int(target['is_called']) >=
+                prior['last_value'] + int(prior['is_called']),
+                'Import would regress the target sequence next value')
 
 
 def expected_tables(payload):
@@ -177,8 +191,9 @@ def import_once(connection, plan, payload, target_fence, fence_lib, journal):
         guard(connection, plan, target_fence, fence_lib)
         require(read_tables(connection) == health_seed(), 'Target is not exactly the owned empty seed')
         before_sequences = read_sequences(connection)
-        require(all(v == {'last_value': 1, 'is_called': False} for v in before_sequences.values()),
-                'Target sequences are not unused; investigate without import')
+        validate_sequence_preimage(plan['target_sequences_before'], desired_sequences)
+        require(before_sequences == plan['target_sequences_before'],
+                'Target sequence preimage changed; investigate without import')
         journal.start({'format': 1, 'kind': 'powerdns-data-import-receipt', 'operation_id': plan['operation_id'],
                        'plan_sha256': digest(plan), 'snapshot_sha256': plan['snapshot_sha256'],
                        'target': plan['target'], 'target_fence_sha256': plan['target_fence_sha256'],

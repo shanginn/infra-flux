@@ -81,3 +81,39 @@ Playbook сверяет подтверждённую операцию и тек�
 обновлении версии можно передать `overlay_maintenance_previous_hashes` с точными
 прежними SHA256 двух имён файлов; обновление всё равно запрещено при незавершённой
 операции. Не удаляйте записи операций для обхода защиты.
+
+## Alternate TLS path to an existing DERP relay
+
+`derp-transports.json` is an optional root-owned `0600` record on both VPS nodes:
+`owner: infra-flux/ansible/derp-transports`, `format: 1`, and `transports` entries
+with `region_host`, `via_host`, `via_ipv4` and `upstream_ipv4`. Public addresses
+belong in private inputs. The shared routing preflight validates actual site
+addresses, rejects loops and conflicting overrides, and preserves the saved
+record during ingress maintenance. Initial bootstrap can accept the same list
+through `headscale_derp_transports`; later changes require bounded maintenance.
+
+A transport adds an SNI passthrough on the other VPS and a second map entry in
+its existing region. `HostName` retains the original TLS identity; `IPv4` changes
+only the TCP destination. Both paths reach the **same** DERP process. STUN is
+disabled on the extra path. This does not make the remote DERP process redundant.
+Headscale 0.29.5 shuffles entries, so direct-path priority is not guaranteed.
+Tailscale 1.104.1 tries each TCP dial for up to 1.5 seconds within the overall
+10-second connection budget. A TLS failure after TCP connects does not fall
+back; HTTP proxy and forced-WebSocket modes require separate validation.
+
+Apply with exact file/service identities, durable preimages and independent
+rollback timers: validate and gracefully reload the proxy first, check the
+original SNI certificate through it, then install matching maps/records on both
+VPS nodes. With the current `auto_update_enabled: false`, Headscale needs a
+bounded restart after a fresh verified encrypted coordinator snapshot; SIGHUP
+reloads only its ACL policy. Keep the standby inactive. Check all existing node
+identities, restricted policy, received client maps and real allowed/denied
+traffic before confirming. Never modify an in-flight client's owned hosts file,
+helper or deadline to make the new path pass.
+
+The current coordinator snapshot includes `derp.yaml` but not this optional
+transport record or HAProxy configuration. The Mac node-configuration export covers their directories `/etc/infra-overlay`
+and `/etc/infra-flux`; refresh and verify that export after activation. Also
+preserve node-local preimages in the maintenance recovery bundle and restore
+them before any future shared-router render. Do not claim the coordinator
+snapshot alone restores this alternate path.

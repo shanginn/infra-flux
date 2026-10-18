@@ -12,4 +12,17 @@ regions:
         ipv6: none
         stunport: 3478
         canport80: false
+{% for transport in overlay_derp_transports | default([]) %}
+{% if transport.region_host == name %}
+      # Another TLS route to this same DERP process, not an independent relay.
+      - name: {{ region.region_code }}-via-{{ transport.via_host }}
+        regionid: {{ region.region_id }}
+        hostname: {{ region.hostname }}
+        ipv4: {{ transport.via_ipv4 }}
+        ipv6: none
+        derpport: 443
+        stunport: -1
+        canport80: false
+{% endif %}
+{% endfor %}
 {% endfor %}

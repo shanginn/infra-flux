@@ -95,6 +95,64 @@ def resolve_routing(settings):
     return {'record': record, 'upstream_ipv4': upstream}
 
 
+
+DERP_TRANSPORT_OWNER = 'infra-flux/ansible/derp-transports'
+
+
+def resolve_derp_transports(settings):
+    """Preserve optional public TLS paths to the same remote DERP process."""
+    record = settings.get('record')
+    expected = settings.get('expected')
+    require(expected is None or isinstance(expected, list), 'DERP transports must be an explicit list')
+    if record is None:
+        require(not settings.get('existing_cross_route'), 'Cross-DERP route has no owned transport record')
+        if not expected:
+            return {'record': None, 'transports': []}
+        require(settings.get('allow_initial_record') is True,
+                'Initialize DERP transports through bounded maintenance first')
+        record = {'owner': DERP_TRANSPORT_OWNER, 'format': 1, 'transports': expected}
+    require(isinstance(record, dict) and set(record) == {'owner', 'format', 'transports'}
+            and record['owner'] == DERP_TRANSPORT_OWNER and type(record['format']) is int
+            and record['format'] == 1, 'Unknown DERP transport record')
+    transports = record['transports']
+    require(isinstance(transports, list) and len(transports) <= 2, 'Invalid DERP transport list')
+    if expected is not None:
+        require(expected == transports, 'Declared DERP transports conflict with saved state')
+    hosts = settings['derp_hosts']
+    require(set(hosts) == {'msk', 'fin'} and settings['local_host'] in hosts,
+            'Unknown DERP transport site')
+    require(isinstance(settings['local_ipv4'], list) and settings['local_ipv4'], 'Local addresses required')
+    local = {ipaddress.IPv4Address(value) for value in settings['local_ipv4']}
+    networks = [ipaddress.IPv4Interface(value).network for value in settings['namespace_addresses']]
+    tailnet = ipaddress.IPv4Network(settings['tailnet_prefix'])
+    require(tailnet.subnet_of(ipaddress.IPv4Network('100.64.0.0/10')), 'Unexpected tailnet prefix')
+    seen = set()
+    for item in transports:
+        require(isinstance(item, dict) and set(item) ==
+                {'region_host', 'via_host', 'via_ipv4', 'upstream_ipv4'}, 'Unexpected DERP transport fields')
+        region, via = item['region_host'], item['via_host']
+        require(region in hosts and via in hosts and region != via, 'DERP transport cannot relay to itself')
+        require(region not in seen, 'Duplicate DERP transport region')
+        seen.add(region)
+        addresses = []
+        for key in ('via_ipv4', 'upstream_ipv4'):
+            address = ipaddress.IPv4Address(item[key])
+            require(isinstance(item[key], str) and str(address) == item[key] and address.is_global
+                    and not address.is_multicast and not address.is_reserved,
+                    'DERP transports require public unicast IPv4 literals')
+            require(not any(address in net for net in [tailnet, *networks]), 'DERP transport depends on overlay')
+            addresses.append(address)
+        require(addresses[0] != addresses[1], 'DERP transport loops to its listener')
+        own_index = 0 if settings['local_host'] == via else 1
+        require(addresses[own_index] in local and addresses[1-own_index] not in local,
+                'DERP transport does not match actual site addresses')
+        hostname = hosts[region]['hostname']
+        require(isinstance(hostname, str) and '.' in hostname and len(hostname) <= 253
+                and all(re.fullmatch(r'[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?', part)
+                        for part in hostname.split('.')), 'Invalid DERP TLS identity')
+    return {'record': record, 'transports': transports}
+
+
 def main():
     settings = json.load(sys.stdin)
     if settings['operation'] == 'policy':
@@ -102,6 +160,8 @@ def main():
         print(json.dumps({'valid': True}))
     elif settings['operation'] == 'routing':
         print(json.dumps(resolve_routing(settings)))
+    elif settings['operation'] == 'derp-transports':
+        print(json.dumps(resolve_derp_transports(settings)))
     else:
         raise ValueError('Unknown overlay configuration operation')
 

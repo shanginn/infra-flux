@@ -35,6 +35,11 @@ frontend public_tls
     tcp-request content accept if { req.ssl_hello_type 1 }
     use_backend derp if { req.ssl_sni -i {{ derp_hosts[inventory_hostname].hostname }} }
     use_backend headscale if { req.ssl_sni -i {{ headscale_hostname }} }
+{% for transport in overlay_derp_transports | default([]) %}
+{% if transport.via_host == inventory_hostname %}
+    use_backend derp_cross_{{ transport.region_host }} if { req.ssl_sni -i {{ derp_hosts[transport.region_host].hostname }} }
+{% endif %}
+{% endfor %}
 {% if overlay_ingress_backends | default({}) %}
     default_backend cluster_ingress_tls
 {% else %}
@@ -53,6 +58,14 @@ backend headscale
     server coordinator {{ overlay_headscale_upstream_ipv4 }}:443 check
 {% endif %}
 
+{% for transport in overlay_derp_transports | default([]) %}
+{% if transport.via_host == inventory_hostname %}
+backend derp_cross_{{ transport.region_host }}
+    mode tcp
+    server same_derper {{ transport.upstream_ipv4 }}:443 check
+
+{% endif %}
+{% endfor %}
 backend reject_tls
     mode tcp
     tcp-request content reject

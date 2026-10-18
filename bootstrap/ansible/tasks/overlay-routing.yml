@@ -48,3 +48,6 @@
     overlay_coordinator_relay: "{{ (overlay_routing_checked.stdout | from_json).record }}"
     overlay_headscale_upstream_ipv4: "{{ (overlay_routing_checked.stdout | from_json).upstream_ipv4 }}"
   no_log: true
+
+- name: Preserve optional cross-DERP transport before rendering shared routers
+  ansible.builtin.include_tasks: overlay-derp-transports.yml

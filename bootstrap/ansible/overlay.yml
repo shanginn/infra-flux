@@ -468,6 +468,17 @@
       when: not overlay_is_coordinator
       no_log: true
 
+    - name: Persist explicitly configured initial DERP transport routes
+      ansible.builtin.copy:
+        dest: "{{ overlay_root }}/derp-transports.json"
+        content: "{{ overlay_derp_transport_record | to_nice_json }}\n"
+        owner: root
+        group: root
+        mode: '0600'
+        force: false
+      when: overlay_derp_transport_record is not none
+      no_log: true
+
     - name: Install and validate the SNI and ACME router configuration
       ansible.builtin.template:
         src: overlay/haproxy.cfg.j2

@@ -36,3 +36,8 @@ overlay_haproxy_version: 3.0.11-1+deb13u3
 overlay_certbot_version: 4.0.0-2+deb13u1
 overlay_coturn_version: 4.6.1-2
 overlay_golang_version: 2:1.24~2
+
+# Optional initial-only headscale_derp_transports uses region_host/via_host plus
+# private via_ipv4/upstream_ipv4 public literals. Runtime routers read the owned
+# derp-transports.json record; overrides must match it exactly. Bounded maintenance
+# changes both maps and the listener, preserving enrollment and existing sessions.

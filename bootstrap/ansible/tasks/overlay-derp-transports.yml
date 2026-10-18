@@ -1,0 +1,62 @@
+---
+- name: Inspect optional persisted DERP transports
+  ansible.builtin.stat:
+    path: "{{ overlay_root }}/derp-transports.json"
+    follow: false
+  register: overlay_derp_transport_stat
+
+- name: Refuse unsafe DERP transport ownership
+  ansible.builtin.assert:
+    that:
+      - not overlay_derp_transport_stat.stat.exists or (overlay_derp_transport_stat.stat.isreg and not overlay_derp_transport_stat.stat.islnk and overlay_derp_transport_stat.stat.uid == 0 and overlay_derp_transport_stat.stat.mode == '0600')
+
+- name: Read saved DERP transports
+  ansible.builtin.slurp:
+    src: "{{ overlay_root }}/derp-transports.json"
+  register: overlay_derp_transport_saved
+  when: overlay_derp_transport_stat.stat.exists
+  no_log: true
+
+- name: Check for orphaned cross-DERP router or map entries
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/python3
+      - -c
+      - |
+        import pathlib,re,sys
+        root=pathlib.Path(sys.argv[1])
+        proxy=root/'haproxy.cfg'; derp=root/'derp.yaml'
+        routed=proxy.exists() and 'backend derp_cross_' in proxy.read_text()
+        mapped=derp.exists() and re.search(r'^\s*-\s*name:\s*[^\n]*-via-',derp.read_text(),re.M)
+        print('yes' if routed or mapped else 'no')
+      - "{{ overlay_root }}"
+  register: overlay_derp_cross_existing
+  changed_when: false
+  check_mode: false
+
+- name: Validate DERP transport identities and exclude loops
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/python3
+      - -c
+      - "{{ lookup('ansible.builtin.file', playbook_dir + '/files/overlay-settings.py') }}"
+    stdin: >-
+      {{ {'operation': 'derp-transports', 'local_host': inventory_hostname,
+          'local_ipv4': ansible_facts.all_ipv4_addresses,
+          'namespace_addresses': [overlay_ns_host_address, overlay_ns_service_address],
+          'tailnet_prefix': overlay_tailnet_prefix, 'derp_hosts': derp_hosts,
+          'expected': headscale_derp_transports | default(none),
+          'allow_initial_record': overlay_allow_initial_relay_record | default(false),
+          'existing_cross_route': overlay_derp_cross_existing.stdout | trim == 'yes',
+          'record': (overlay_derp_transport_saved.content | b64decode | from_json)
+                    if overlay_derp_transport_stat.stat.exists else none} | to_json }}
+  register: overlay_derp_transports_checked
+  changed_when: false
+  check_mode: false
+  no_log: true
+
+- name: Render only validated saved DERP transports
+  ansible.builtin.set_fact:
+    overlay_derp_transport_record: "{{ (overlay_derp_transports_checked.stdout | from_json).record }}"
+    overlay_derp_transports: "{{ (overlay_derp_transports_checked.stdout | from_json).transports }}"
+  no_log: true

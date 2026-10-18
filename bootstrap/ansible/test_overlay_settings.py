@@ -174,5 +174,116 @@ class SettingsTests(unittest.TestCase):
                                                         'ansible.builtin.systemd_service')))
 
 
+
+class DerpTransportTests(unittest.TestCase):
+    def settings(self, site='msk'):
+        return {'local_host': site, 'local_ipv4': ['1.1.1.1' if site == 'msk' else '8.8.8.8'],
+                'namespace_addresses': ['10.254.254.1/30', '10.254.254.2/30'],
+                'tailnet_prefix': '100.100.0.0/24', 'derp_hosts': template_context()['derp_hosts'],
+                'record': {'owner': m.DERP_TRANSPORT_OWNER, 'format': 1, 'transports': [
+                    {'region_host': 'fin', 'via_host': 'msk', 'via_ipv4': '1.1.1.1', 'upstream_ipv4': '8.8.8.8'}]}}
+
+    def test_saved_transport_is_authoritative_on_both_hosts(self):
+        for site in ('msk', 'fin'):
+            settings = self.settings(site)
+            result = m.resolve_derp_transports(settings)
+            self.assertEqual(result['record'], settings['record'])
+            self.assertEqual(result['transports'], settings['record']['transports'])
+            settings['expected'] = []
+            with self.assertRaises(ValueError): m.resolve_derp_transports(settings)
+
+    def test_absent_optional_feature_and_orphan_fail_closed(self):
+        settings = self.settings(); settings['record'] = None
+        self.assertEqual(m.resolve_derp_transports(settings), {'record': None, 'transports': []})
+        settings['existing_cross_route'] = True
+        with self.assertRaises(ValueError): m.resolve_derp_transports(settings)
+
+    def test_orphan_detector_checks_remote_region_map_even_without_local_proxy(self):
+        import subprocess, sys, tempfile
+        tasks = yaml.safe_load((ROOT/'tasks/overlay-derp-transports.yml').read_text())
+        task = next(t for t in tasks if t['name'].startswith('Check for orphaned'))
+        code = task['ansible.builtin.command']['argv'][2]
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            (directory/'haproxy.cfg').write_text('backend derp\n    server local 127.0.0.1:8444\n')
+            (directory/'derp.yaml').write_text('regions:\n  902:\n    nodes:\n      - name: fin-via-msk\n')
+            result = subprocess.run([sys.executable,'-c',code,temporary],capture_output=True,text=True,check=True)
+            self.assertEqual(result.stdout, 'yes\n')
+
+    def test_invalid_empty_override_never_silently_disables_transports(self):
+        for value in ({}, False, 0, ''):
+            settings = self.settings(); settings['record'] = None; settings['expected'] = value
+            with self.subTest(value=value), self.assertRaises(ValueError): m.resolve_derp_transports(settings)
+
+    def test_only_explicit_bootstrap_can_initialize_record(self):
+        settings = self.settings(); settings['expected'] = settings['record']['transports']; settings['record'] = None
+        with self.assertRaises(ValueError): m.resolve_derp_transports(settings)
+        settings['allow_initial_record'] = True
+        self.assertEqual(m.resolve_derp_transports(settings)['transports'], settings['expected'])
+
+    def test_reject_invalid_ownership_unknown_fields_and_duplicate_regions(self):
+        for mutation in ({'owner': 'foreign'}, {'format': True}, {'other': True}, {'transports': {}}):
+            settings = self.settings(); settings['record'].update(mutation)
+            with self.subTest(mutation=mutation), self.assertRaises(ValueError): m.resolve_derp_transports(settings)
+        settings = self.settings(); settings['record']['transports'] *= 2
+        with self.assertRaises(ValueError): m.resolve_derp_transports(settings)
+
+    def test_reject_loops_nonpublic_addresses_or_wrong_actual_site(self):
+        for mutation in ({'via_host': 'fin'}, {'region_host': 'home'}, {'via_ipv4': '8.8.8.8'},
+                         {'upstream_ipv4': '1.1.1.1'}, {'upstream_ipv4': '127.0.0.1'},
+                         {'upstream_ipv4': '100.100.0.2'}, {'upstream_ipv4': '10.254.254.2'},
+                         {'upstream_ipv4': '192.0.2.1'}, {'upstream_ipv4': '8.8.8.8:443'},
+                         {'via_ipv4': '9.9.9.9'}, {'upstream_ipv4': '8.8.8.8\n'}):
+            settings = self.settings(); settings['record']['transports'][0].update(mutation)
+            with self.subTest(mutation=mutation), self.assertRaises(ValueError): m.resolve_derp_transports(settings)
+
+    def test_router_preserves_original_routes_and_tls(self):
+        transports = m.resolve_derp_transports(self.settings())['transports']
+        for site in ('msk', 'fin'):
+            context = template_context(site); before = render(context)
+            after = render({**context, 'overlay_derp_transports': transports})
+            if site == 'fin':
+                self.assertEqual(after.split(), before.split())
+            else:
+                self.assertIn('use_backend derp_cross_fin if { req.ssl_sni -i derp-fin.example.org }', after)
+                self.assertIn('server same_derper 8.8.8.8:443 check', after)
+                stripped = after.replace('    use_backend derp_cross_fin if { req.ssl_sni -i derp-fin.example.org }\n', '')
+                stripped = stripped.replace('backend derp_cross_fin\n    mode tcp\n    server same_derper 8.8.8.8:443 check\n\n', '')
+                self.assertEqual(stripped.split(), before.split())
+                cross = after.split('backend derp_cross_fin\n', 1)[1].split('backend reject_tls', 1)[0]
+                self.assertNotIn('send-proxy', cross)
+                self.assertNotIn(' ssl', cross)
+
+    def test_router_without_ingress_has_one_fallback_backend_and_reject_default(self):
+        context = template_context(); context['overlay_ingress_backends'] = {}
+        context['overlay_derp_transports'] = m.resolve_derp_transports(self.settings())['transports']
+        output = render(context)
+        self.assertIn('    default_backend reject_tls\n', output)
+        self.assertEqual(output.count('\nbackend derp_cross_fin\n'), 1)
+        self.assertNotIn('default_backend derp_cross', output)
+
+    def test_map_fallback_is_same_region_same_tls_identity_only(self):
+        context = template_context()
+        for name, number in (('msk', 901), ('fin', 902)):
+            context['derp_hosts'][name].update(region_code=name, region_id=number)
+        template = Environment(undefined=StrictUndefined).from_string((ROOT/'templates/overlay/derp.yaml.j2').read_text())
+        before = yaml.safe_load(template.render(context))
+        context['overlay_derp_transports'] = m.resolve_derp_transports(self.settings())['transports']
+        after = yaml.safe_load(template.render(context))
+        self.assertEqual(before['regions'][901], after['regions'][901])
+        nodes = after['regions'][902]['nodes']
+        self.assertEqual(nodes[0], before['regions'][902]['nodes'][0])
+        self.assertEqual(len(nodes), 2)
+        self.assertEqual(nodes[1], {'name':'fin-via-msk','regionid':902,'hostname':'derp-fin.example.org',
+                                  'ipv4':'1.1.1.1','ipv6':'none','derpport':443,'stunport':-1,'canport80':False})
+
+    def test_runtime_preflight_reads_and_validates_before_any_write(self):
+        tasks = yaml.safe_load((ROOT/'tasks/overlay-derp-transports.yml').read_text())
+        for task in tasks:
+            self.assertFalse(any(key in task for key in ('ansible.builtin.copy','ansible.builtin.template','ansible.builtin.systemd_service')))
+        self.assertEqual(tasks[-1]['ansible.builtin.set_fact']['overlay_derp_transports'],
+                         '{{ (overlay_derp_transports_checked.stdout | from_json).transports }}')
+
+
 if __name__ == '__main__':
     unittest.main()

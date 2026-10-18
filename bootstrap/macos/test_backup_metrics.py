@@ -8,6 +8,8 @@ from pathlib import Path
 import tempfile
 import unittest
 import subprocess
+import sys
+import types
 from unittest.mock import patch
 
 spec=importlib.util.spec_from_file_location('metrics',Path(__file__).with_name('publish-backup-metrics.py'))
@@ -68,6 +70,85 @@ class ReceiverTests(unittest.TestCase):
 
 
 class DeliveryTests(unittest.TestCase):
+    def test_per_destination_jump_keeps_identity_payload_and_default_route(self):
+        for chains in (None, {}, {'secondary': ['gateway', 'relay']}, {'secondary': []}):
+            with self.subTest(chains=chains), tempfile.TemporaryDirectory() as tmp:
+                status=Path(tmp)/'status.json'
+                config={'jobs':[{'name':'garage','enabled':True,'ssh_jump_chain':['export-only']}],
+                    'metrics_publication':{'enabled':True,'cluster_name':'test','ca_sha256':'a'*64,
+                                           'ssh_aliases':['primary','secondary']}}
+                if chains is not None:
+                    config['metrics_publication']['ssh_jump_chains']=chains
+                with patch.object(b,'STATUS',status),patch.object(b.subprocess,'run') as send:
+                    b.publish_metrics(config)
+                self.assertEqual(send.call_count,2)
+                for call,alias in zip(send.call_args_list,['primary','secondary']):
+                    argv=call.args[0]
+                    self.assertEqual(argv[-2],alias)
+                    self.assertIn('StrictHostKeyChecking=yes',argv)
+                    self.assertIn('BatchMode=yes',argv)
+                    self.assertNotIn('export-only',argv)
+                    self.assertNotIn('HostKeyAlias=', ' '.join(argv[:-1]))
+                    payload=json.loads(call.kwargs['input'])
+                    self.assertEqual(payload['ca_sha256'],'a'*64)
+                    self.assertEqual(payload['cluster_name'],'test')
+                    expected=(chains or {}).get(alias,[])
+                    if expected:
+                        self.assertEqual(argv[argv.index('-J')+1],','.join(expected))
+                    else:
+                        self.assertNotIn('-J',argv)
+                self.assertTrue(json.loads(status.read_text())['metrics_publication']['ok'])
+
+    def test_invalid_mapping_fails_before_any_delivery_or_status_write(self):
+        invalid=(None, [], 'secondary=gateway', {'unknown': []}, {'secondary': None},
+                 {'secondary': 'gateway'}, {'secondary': ['secondary']},
+                 {'secondary': ['gateway','gateway']}, {'secondary': ['-F']},
+                 {'secondary': ['user@host']}, {'secondary': ['a','b','c','d']})
+        for chains in invalid:
+            with self.subTest(chains=chains),patch.object(b.subprocess,'run') as send, \
+                    patch.object(b,'atomic_json') as write:
+                config={'metrics_publication':{'enabled':True,'ssh_aliases':['secondary'],
+                                                'ssh_jump_chains':chains}}
+                with self.assertRaises(RuntimeError):
+                    b.publish_metrics(config)
+                send.assert_not_called()
+                write.assert_not_called()
+
+    def test_settings_rejects_unconfigured_metrics_jump_destination(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);root.chmod(0o700)
+            password=root/'password';password.write_text('fixture');password.chmod(0o600)
+            config=root/'config.json'
+            data={'owner':b.OWNER,'repository':str(root.parent/'unused-repository'),
+                  'jobs':[{'name':'node','component':'node-config','ssh_aliases':['source'],'max_bytes':1048576}],
+                  'metrics_publication':{'enabled':True,'cluster_name':'test','ca_sha256':'a'*64,
+                                         'ssh_aliases':['secondary']}}
+            config.write_text(json.dumps(data))
+            with patch.object(b,'STATE',root),patch.object(b,'PASSWORD',password):
+                b.settings(config)
+                data['metrics_publication']['ssh_jump_chains']={'unknown': []}
+                config.write_text(json.dumps(data))
+                with self.assertRaises(RuntimeError):
+                    b.settings(config)
+
+    def test_installer_rejects_invalid_metrics_route_before_writing(self):
+        with patch.dict(sys.modules,{'backup':b}):
+            spec=importlib.util.spec_from_file_location('metrics_installer',Path(__file__).with_name('install.py'))
+            installer=importlib.util.module_from_spec(spec);spec.loader.exec_module(installer)
+        with tempfile.TemporaryDirectory() as tmp:
+            config=Path(tmp)/'config.json'
+            config.write_text(json.dumps({'jobs':[{'component':'node-config','ssh_aliases':['source']}],
+                'metrics_publication':{'ssh_aliases':['secondary'],'ssh_jump_chains':{'secondary':['secondary']}}}))
+            responses=[types.SimpleNamespace(stdout='restic 0.19.1 test'),
+                       types.SimpleNamespace(stdout='--stdin-from-command')]
+            with patch.object(sys,'argv',['install.py','--config',str(config)]), \
+                    patch.object(installer.sys,'platform','darwin'),patch.object(installer.os,'geteuid',return_value=501), \
+                    patch.object(installer.shutil,'which',return_value='/fixture/restic'), \
+                    patch.object(installer.subprocess,'run',side_effect=responses),patch.object(installer,'atomic_json') as write:
+                with self.assertRaises(RuntimeError):
+                    installer.main()
+                write.assert_not_called()
+
     def test_one_unreachable_destination_preserves_actual_backup_success(self):
         with tempfile.TemporaryDirectory() as tmp:
             status=Path(tmp)/'status.json'

@@ -54,6 +54,19 @@ def validate_jump_chains(jobs):
             ssh_jump_options(job.get('restore_ssh_jump_chain', []), job.get('restore_ssh_alias'))
 
 
+def validate_metrics_jump_chains(metrics):
+    require(isinstance(metrics, dict), 'Invalid metrics publication settings')
+    chains = metrics.get('ssh_jump_chains', {})
+    require(isinstance(chains, dict), 'Metrics SSH jump chains must map destination aliases to chains')
+    aliases = metrics.get('ssh_aliases', [])
+    require(isinstance(aliases, list) and all(isinstance(alias, str) and
+            re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,63}', alias) for alias in aliases),
+            'Invalid metrics SSH aliases')
+    require(set(chains).issubset(aliases), 'Metrics SSH jump chain has an unconfigured destination')
+    for alias, chain in chains.items():
+        ssh_jump_options(chain, alias)
+
+
 def atomic_json(path, value):
     temporary = path.with_name('.' + path.name + '-' + uuid.uuid4().hex)
     try:
@@ -93,6 +106,7 @@ def settings(path):
             require(job.get('restore_ssh_alias') and all(c.isalnum() or c in '-_.' for c in job['restore_ssh_alias']),
                     'PostgreSQL requires an explicit isolated restore SSH alias')
     metrics = config.get('metrics_publication', {})
+    validate_metrics_jump_chains(metrics)
     if metrics.get('enabled', False):
         require(re.fullmatch(r'[0-9a-f]{64}', metrics.get('ca_sha256', '')) and metrics.get('cluster_name'), 'Metrics need an explicit cluster CA identity')
         require(metrics.get('ssh_aliases') and all(re.fullmatch(r'[A-Za-z0-9_.-]+', alias) for alias in metrics['ssh_aliases']), 'Invalid metrics SSH aliases')
@@ -295,6 +309,7 @@ def publish_metrics(config):
     metrics = config.get('metrics_publication', {})
     if not metrics.get('enabled', False):
         return
+    validate_metrics_jump_chains(metrics)
     current = json.loads(STATUS.read_text()) if STATUS.exists() else {'jobs': {}}
     payload = {'cluster_name': metrics['cluster_name'], 'ca_sha256': metrics['ca_sha256'], 'jobs': []}
     for job in config['jobs']:
@@ -307,7 +322,8 @@ def publish_metrics(config):
     for alias in metrics['ssh_aliases']:
         try:
             subprocess.run(['/usr/bin/ssh', '-T', '-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=yes',
-                            '-o', 'ConnectTimeout=15', '-o', 'ServerAliveInterval=15', '-o', 'ServerAliveCountMax=3', alias, remote],
+                            '-o', 'ConnectTimeout=15', '-o', 'ServerAliveInterval=15', '-o', 'ServerAliveCountMax=3',
+                            *ssh_jump_options(metrics.get('ssh_jump_chains', {}).get(alias, []), alias), alias, remote],
                            input=json.dumps(payload).encode(), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                            timeout=60, check=True)
             outcomes[alias] = {'ok': True}

@@ -1,0 +1,36 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: legacy-pdns-api-proxy
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/name: legacy-pdns-api-proxy}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: vibesites-pi}
+          podSelector:
+            matchLabels: {app.kubernetes.io/name: vibesites-pi}
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: vibesites-pi}
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: vibesites-pi-worker
+              app.kubernetes.io/component: temporal-worker
+      ports: [{port: 8081, protocol: TCP}]
+    - from: [{namespaceSelector: {}}]
+      ports: [{port: 5353, protocol: TCP}, {port: 5353, protocol: UDP}]
+    - from:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: monitoring}
+      ports: [{port: 8404, protocol: TCP}, {port: 9153, protocol: TCP}]
+  egress:
+    - to: [{ipBlock: {cidr: "${MSK_VPN_ADDRESS}/32"}}, {ipBlock: {cidr: "${FIN_VPN_ADDRESS}/32"}}]
+      ports: [{port: 18081, protocol: TCP}]
+    - to:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: vibesites-dns}
+          podSelector:
+            matchLabels: {app: powerdns, app.kubernetes.io/name: powerdns}
+      ports: [{port: 53, protocol: TCP}, {port: 53, protocol: UDP}]

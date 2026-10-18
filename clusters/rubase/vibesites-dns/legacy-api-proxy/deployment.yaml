@@ -1,0 +1,80 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: legacy-pdns-api-proxy
+spec:
+  replicas: 2
+  minReadySeconds: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: {maxSurge: 1, maxUnavailable: 0}
+  selector:
+    matchLabels: {app.kubernetes.io/name: legacy-pdns-api-proxy}
+  template:
+    metadata:
+      annotations:
+        infra.shanginn.io/private-config-revision: "${LEGACY_DNS_PROXY_CONFIG_REVISION}"
+      labels: {app.kubernetes.io/name: legacy-pdns-api-proxy}
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 15
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: api-proxy
+          image: docker.io/library/haproxy:3.2.26-alpine@sha256:254e6370f01cd654e0744edf607c67f33777c1b6a9dc0d4b28bcba7171460122
+          command: [/usr/local/sbin/haproxy]
+          args: [-W, -db, -f, /config/haproxy.cfg]
+          env:
+            - name: PDNS_API_KEY
+              valueFrom:
+                secretKeyRef: {name: powerdns-api, key: api-key, optional: false}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          ports:
+            - {name: http-api, containerPort: 8081}
+            - {name: haproxy-metrics, containerPort: 8404}
+          # Keep DNS alias endpoints available if both API entries are down.
+          # /ready and backend-up metrics separately report API availability.
+          readinessProbe:
+            httpGet: {path: /healthz, port: 8404}
+            periodSeconds: 2
+          livenessProbe:
+            httpGet: {path: /healthz, port: 8404}
+            periodSeconds: 10
+          resources:
+            requests: {cpu: 10m, memory: 16Mi}
+            limits: {cpu: 250m, memory: 64Mi}
+          volumeMounts:
+            - {name: config, mountPath: /config, readOnly: true}
+        - name: dns-alias
+          image: docker.io/coredns/coredns:1.14.7@sha256:7efd3c635b03efd68c4e8398fc45f0d993d0e9ab016f72c1cefb0fd6d01aa286
+          args: [-conf, /config/Corefile]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          ports:
+            - {name: dns-tcp, containerPort: 5353, protocol: TCP}
+            - {name: dns-udp, containerPort: 5353, protocol: UDP}
+            - {name: dns-metrics, containerPort: 9153}
+          readinessProbe:
+            httpGet: {path: /ready, port: 8181}
+            periodSeconds: 2
+          livenessProbe:
+            httpGet: {path: /health, port: 8080}
+            periodSeconds: 10
+          resources:
+            requests: {cpu: 10m, memory: 16Mi}
+            limits: {cpu: 250m, memory: 64Mi}
+          volumeMounts:
+            - {name: config, mountPath: /config, readOnly: true}
+      volumes:
+        - name: config
+          configMap: {name: legacy-pdns-api-proxy-config}

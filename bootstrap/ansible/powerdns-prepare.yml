@@ -1,0 +1,143 @@
+---
+- name: Prepare isolated PowerDNS database and preserve its runtime credentials
+  hosts: unified
+  become: true
+  gather_facts: false
+  any_errors_fatal: true
+  vars:
+    powerdns_prepare_enabled: false
+    # The exact first deployed helper; never accept an arbitrary prior version.
+    powerdns_previous_helper_sha256: 37dcd127514853a5a33f619f5dfe49a4ae1ad4427cd21a4013cfd46f53b76b18
+  tasks:
+    - name: Leave runtime unchanged unless explicitly enabled
+      ansible.builtin.meta: end_play
+      when: not powerdns_prepare_enabled | bool
+
+    - name: Require the existing complete cluster and reviewed identity
+      ansible.builtin.assert:
+        that:
+          - not ansible_check_mode
+          - ansible_play_hosts_all | sort == ['fin', 'home', 'msk']
+          - powerdns_cluster_uid is defined
+          - powerdns_ca_sha256 is defined
+          - powerdns_api_key_file is defined
+
+    - name: Verify the private controller input without exposing its contents
+      ansible.builtin.command:
+        argv:
+          - python3
+          - -c
+          - |
+            import os,pathlib,stat,sys
+            p=pathlib.Path(sys.argv[1]); s=p.lstat()
+            assert stat.S_ISREG(s.st_mode) and s.st_uid==os.geteuid() and not s.st_mode & 0o077
+          - '{{ powerdns_api_key_file }}'
+      delegate_to: localhost
+      become: false
+      run_once: true
+      changed_when: false
+
+    - name: Verify every recovery destination and existing credential identity
+      ansible.builtin.command:
+        argv:
+          - python3
+          - -c
+          - |
+            import hashlib,json,pathlib,stat,sys,types
+            root=pathlib.Path('/etc/infra-flux')
+            m=json.loads((root/'kubeadm-state.json').read_text())
+            assert m['managed_by']=='infra-flux/ansible/kubeadm'
+            assert m['ca_sha256']==sys.argv[1]==hashlib.sha256(pathlib.Path('/etc/kubernetes/pki/ca.crt').read_bytes()).hexdigest()
+            assert m['node_name']==sys.argv[3]
+            assert not root.is_symlink() and root.stat().st_uid==0 and not root.stat().st_mode & 0o022
+            module=types.ModuleType('reviewed_prepare')
+            exec(compile(sys.argv[4],'<reviewed-prepare>','exec'),module.__dict__)
+            p=root/'powerdns-runtime.json'; assert not p.is_symlink()
+            identity=None
+            if p.exists():
+              s=module.read_state(p)
+              assert s['ca_sha256']==sys.argv[1] and s['cluster_uid']==sys.argv[2]
+              identity=module.recovery_identity(s)
+            helper=root/'powerdns-prepare.py'; assert not helper.is_symlink()
+            if helper.exists():
+              h=helper.stat()
+              assert stat.S_ISREG(h.st_mode) and h.st_uid==0 and not h.st_mode & 0o077
+              assert hashlib.sha256(helper.read_bytes()).hexdigest() in (sys.argv[5],hashlib.sha256(sys.argv[4].encode()).hexdigest())
+            print(json.dumps({'state_exists':p.exists(),'state_identity':identity}))
+          - '{{ powerdns_ca_sha256 }}'
+          - '{{ powerdns_cluster_uid }}'
+          - '{{ inventory_hostname }}'
+          - "{{ lookup('ansible.builtin.file', playbook_dir ~ '/files/powerdns-prepare.py', rstrip=False) }}"
+          - '{{ powerdns_previous_helper_sha256 }}'
+      changed_when: false
+      register: powerdns_preflight
+
+    - name: Retain only non-secret recovery identity hashes
+      ansible.builtin.set_fact:
+        powerdns_recovery_identity: '{{ powerdns_preflight.stdout | from_json }}'
+
+    - name: Refuse regeneration or conflicting recovery bundles
+      ansible.builtin.assert:
+        that:
+          - hostvars['msk'].powerdns_recovery_identity.state_exists or (ansible_play_hosts_all | map('extract', hostvars, 'powerdns_recovery_identity') | selectattr('state_exists') | list | length == 0)
+          - ansible_play_hosts_all | map('extract', hostvars, 'powerdns_recovery_identity') | selectattr('state_exists') | map(attribute='state_identity') | unique | list | length <= 1
+        fail_msg: Restore the original recovery bundle; never replace differing passwords or keys.
+      run_once: true
+
+    - name: Install reviewed helper on the fixed provisioning node
+      ansible.builtin.copy:
+        src: files/powerdns-prepare.py
+        dest: /etc/infra-flux/powerdns-prepare.py
+        owner: root
+        group: root
+        mode: '0700'
+      when: inventory_hostname == 'msk'
+
+    - name: Prepare the owned database and runtime Secrets without changing any writers
+      ansible.builtin.command:
+        argv: [python3, /etc/infra-flux/powerdns-prepare.py]
+        stdin: "{{ {'enabled': true, 'cluster_uid': powerdns_cluster_uid, 'ca_sha256': powerdns_ca_sha256, 'api_key': lookup('ansible.builtin.file', powerdns_api_key_file) | trim, 'schema': lookup('ansible.builtin.file', playbook_dir ~ '/files/powerdns-schema.sql', rstrip=False), 'schema_sha256': lookup('ansible.builtin.file', playbook_dir ~ '/files/powerdns-schema.sql', rstrip=False) | hash('sha256')} | to_json }}"
+      delegate_to: msk
+      run_once: true
+      no_log: true
+      register: powerdns_prepared
+      changed_when: true
+
+    - name: Read the preserved recovery bundle without displaying credentials
+      ansible.builtin.slurp:
+        src: /etc/infra-flux/powerdns-runtime.json
+      delegate_to: msk
+      run_once: true
+      register: powerdns_bundle
+      no_log: true
+
+    - name: Recheck existing credentials before copying the recovery bundle
+      ansible.builtin.command:
+        argv:
+          - python3
+          - -c
+          - |
+            import json,pathlib,sys,types
+            module=types.ModuleType('reviewed_prepare')
+            exec(compile(sys.argv[1],'<reviewed-prepare>','exec'),module.__dict__)
+            incoming=module.validate_state(json.load(sys.stdin))
+            p=pathlib.Path('/etc/infra-flux/powerdns-runtime.json'); assert not p.is_symlink()
+            if p.exists(): assert module.recovery_identity(module.read_state(p))==module.recovery_identity(incoming)
+          - "{{ lookup('ansible.builtin.file', playbook_dir ~ '/files/powerdns-prepare.py', rstrip=False) }}"
+        stdin: '{{ powerdns_bundle.content | b64decode }}'
+      no_log: true
+      changed_when: false
+
+    - name: Preserve the same identity on all nodes for encrypted node backups
+      ansible.builtin.copy:
+        dest: /etc/infra-flux/powerdns-runtime.json
+        content: '{{ powerdns_bundle.content | b64decode }}'
+        owner: root
+        group: root
+        mode: '0600'
+      no_log: true
+
+    - name: Report only the bounded non-secret result
+      ansible.builtin.debug:
+        msg: '{{ powerdns_prepared.stdout | from_json }}'
+      run_once: true

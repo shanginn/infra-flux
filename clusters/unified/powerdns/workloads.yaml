@@ -1,0 +1,374 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: powerdns-readers
+  namespace: dns-powerdns
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: powerdns
+      app.kubernetes.io/component: reader
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: powerdns
+        app.kubernetes.io/component: reader
+        infra.shanginn.io/metrics: 'true'
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 953
+        runAsGroup: 953
+        fsGroup: 953
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: powerdns
+        image: docker.io/powerdns/pdns-auth-51:5.1.4@sha256:bb5b1c133bcca1dd455075321de7d55db4945a8d7f2ba23339e3c7bbe416b205
+        imagePullPolicy: IfNotPresent
+        command:
+        - python3
+        - -B
+        - /opt/powerdns/runtime.py
+        - start
+        - reader
+        env:
+        - name: POD_NODE
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+        resources:
+          requests:
+            cpu: 25m
+            memory: 64Mi
+          limits:
+            cpu: 500m
+            memory: 256Mi
+        volumeMounts:
+        - name: config
+          mountPath: /opt/powerdns
+          readOnly: true
+        - name: credentials
+          mountPath: /etc/powerdns/runtime
+          readOnly: true
+        - name: runtime
+          mountPath: /run/pdns
+        - name: tmp
+          mountPath: /tmp
+        startupProbe:
+          exec:
+            command:
+            - /usr/local/bin/pdns_control
+            - --config-dir=/run/pdns
+            - rping
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 60
+        livenessProbe:
+          exec:
+            command:
+            - /usr/local/bin/pdns_control
+            - --config-dir=/run/pdns
+            - rping
+          periodSeconds: 15
+          timeoutSeconds: 3
+          failureThreshold: 4
+        readinessProbe:
+          exec:
+            command:
+            - python3
+            - -B
+            - /opt/powerdns/runtime.py
+            - ready
+            - reader
+          periodSeconds: 10
+          timeoutSeconds: 10
+          failureThreshold: 2
+        ports:
+        - name: dns-udp
+          containerPort: 5353
+          protocol: UDP
+        - name: dns-tcp
+          containerPort: 5353
+          protocol: TCP
+      - name: metrics
+        image: docker.io/powerdns/pdns-auth-51:5.1.4@sha256:bb5b1c133bcca1dd455075321de7d55db4945a8d7f2ba23339e3c7bbe416b205
+        imagePullPolicy: IfNotPresent
+        command:
+        - python3
+        - -B
+        - /opt/powerdns/runtime.py
+        - metrics
+        - reader
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+        resources:
+          requests:
+            cpu: 5m
+            memory: 16Mi
+          limits:
+            cpu: 100m
+            memory: 64Mi
+        ports:
+        - name: metrics
+          containerPort: 9081
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: metrics
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: metrics
+          periodSeconds: 15
+        volumeMounts:
+        - name: config
+          mountPath: /opt/powerdns
+          readOnly: true
+        - name: credentials
+          mountPath: /etc/powerdns/runtime
+          readOnly: true
+        - name: runtime
+          mountPath: /run/pdns
+        - name: tmp
+          mountPath: /tmp
+      volumes:
+      - name: config
+        configMap:
+          name: powerdns-config
+      - name: credentials
+        secret:
+          secretName: powerdns-reader-runtime
+          defaultMode: 288
+          items:
+          - {key: credentials.conf, path: credentials.conf}
+          - {key: ca.crt, path: ca.crt}
+      - name: runtime
+        emptyDir:
+          medium: Memory
+          sizeLimit: 8Mi
+      - name: tmp
+        emptyDir:
+          sizeLimit: 8Mi
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: infra.shanginn.io/site
+                operator: In
+                values:
+                - msk
+                - fin
+  updateStrategy:
+    type: OnDelete
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: powerdns-api
+  namespace: dns-powerdns
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: powerdns
+      app.kubernetes.io/component: api
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: powerdns
+        app.kubernetes.io/component: api
+        infra.shanginn.io/metrics: 'true'
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 953
+        runAsGroup: 953
+        fsGroup: 953
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: powerdns
+        image: docker.io/powerdns/pdns-auth-51:5.1.4@sha256:bb5b1c133bcca1dd455075321de7d55db4945a8d7f2ba23339e3c7bbe416b205
+        imagePullPolicy: IfNotPresent
+        command:
+        - python3
+        - -B
+        - /opt/powerdns/runtime.py
+        - start
+        - api
+        env:
+        - name: POD_NODE
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+        resources:
+          requests:
+            cpu: 25m
+            memory: 64Mi
+          limits:
+            cpu: 500m
+            memory: 256Mi
+        volumeMounts:
+        - name: config
+          mountPath: /opt/powerdns
+          readOnly: true
+        - name: credentials
+          mountPath: /etc/powerdns/runtime
+          readOnly: true
+        - name: runtime
+          mountPath: /run/pdns
+        - name: tmp
+          mountPath: /tmp
+        startupProbe:
+          exec:
+            command:
+            - /usr/local/bin/pdns_control
+            - --config-dir=/run/pdns
+            - rping
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 60
+        livenessProbe:
+          exec:
+            command:
+            - /usr/local/bin/pdns_control
+            - --config-dir=/run/pdns
+            - rping
+          periodSeconds: 15
+          timeoutSeconds: 3
+          failureThreshold: 4
+        readinessProbe:
+          exec:
+            command:
+            - python3
+            - -B
+            - /opt/powerdns/runtime.py
+            - ready
+            - api
+          periodSeconds: 10
+          timeoutSeconds: 10
+          failureThreshold: 2
+        ports:
+        - name: api
+          containerPort: 8081
+      - name: metrics
+        image: docker.io/powerdns/pdns-auth-51:5.1.4@sha256:bb5b1c133bcca1dd455075321de7d55db4945a8d7f2ba23339e3c7bbe416b205
+        imagePullPolicy: IfNotPresent
+        command:
+        - python3
+        - -B
+        - /opt/powerdns/runtime.py
+        - metrics
+        - api
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+        resources:
+          requests:
+            cpu: 5m
+            memory: 16Mi
+          limits:
+            cpu: 100m
+            memory: 64Mi
+        ports:
+        - name: metrics
+          containerPort: 9081
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: metrics
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: metrics
+          periodSeconds: 15
+        volumeMounts:
+        - name: config
+          mountPath: /opt/powerdns
+          readOnly: true
+        - name: credentials
+          mountPath: /etc/powerdns/runtime
+          readOnly: true
+        - name: runtime
+          mountPath: /run/pdns
+        - name: tmp
+          mountPath: /tmp
+      volumes:
+      - name: config
+        configMap:
+          name: powerdns-config
+      - name: credentials
+        secret:
+          secretName: powerdns-api-runtime
+          defaultMode: 288
+          items:
+          - {key: credentials.conf, path: credentials.conf}
+          - {key: ca.crt, path: ca.crt}
+      - name: runtime
+        emptyDir:
+          medium: Memory
+          sizeLimit: 8Mi
+      - name: tmp
+        emptyDir:
+          sizeLimit: 8Mi
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: infra.shanginn.io/site
+                operator: In
+                values:
+                - home
+                - msk
+                - fin
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            preference:
+              matchExpressions:
+              - key: infra.shanginn.io/site
+                operator: In
+                values:
+                - home
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                app.kubernetes.io/name: powerdns
+                app.kubernetes.io/component: api
+            topologyKey: kubernetes.io/hostname
+  replicas: 2
+  revisionHistoryLimit: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 0

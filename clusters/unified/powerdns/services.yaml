@@ -1,0 +1,56 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: powerdns-readers
+  namespace: dns-powerdns
+spec:
+  clusterIP: 10.120.53.54
+  internalTrafficPolicy: Local
+  selector:
+    app.kubernetes.io/name: powerdns
+    app.kubernetes.io/component: reader
+  ports:
+    - {name: dns-udp, port: 53, targetPort: 5353, protocol: UDP}
+    - {name: dns-tcp, port: 53, targetPort: 5353, protocol: TCP}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: powerdns-api
+  namespace: dns-powerdns
+spec:
+  selector:
+    app.kubernetes.io/name: powerdns
+    app.kubernetes.io/component: api
+  ports:
+    - {name: api, port: 8081, targetPort: 8081, protocol: TCP}
+---
+# Keep access to a readable local PostgreSQL member during WAN partitions.
+# Patroni readiness/role changes must not silently redirect a reader across WAN.
+apiVersion: v1
+kind: Service
+metadata:
+  name: powerdns-postgres-msk
+  namespace: database
+spec:
+  publishNotReadyAddresses: true
+  selector:
+    app.kubernetes.io/name: patroni
+    cluster-name: unified-postgres
+    member-site: msk
+  ports:
+    - {name: postgresql, port: 5432, targetPort: 5432, protocol: TCP}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: powerdns-postgres-fin
+  namespace: database
+spec:
+  publishNotReadyAddresses: true
+  selector:
+    app.kubernetes.io/name: patroni
+    cluster-name: unified-postgres
+    member-site: fin
+  ports:
+    - {name: postgresql, port: 5432, targetPort: 5432, protocol: TCP}

@@ -1,0 +1,61 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: default-deny, namespace: dns-powerdns}
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: reader-dns, namespace: dns-powerdns}
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/name: powerdns, app.kubernetes.io/component: reader}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: public-dns}}
+          podSelector: {matchLabels: {app: public-dns}}
+      ports: [{port: 5353, protocol: UDP}, {port: 5353, protocol: TCP}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: private-api, namespace: dns-powerdns}
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/name: powerdns, app.kubernetes.io/component: api}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector: {matchLabels: {infra.shanginn.io/powerdns-client: 'true'}}
+          podSelector: {matchLabels: {infra.shanginn.io/powerdns-client: 'true'}}
+      ports: [{port: 8081, protocol: TCP}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: metrics, namespace: dns-powerdns}
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/name: powerdns}}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: monitoring}}
+          podSelector: {matchLabels: {app: prometheus}}
+      ports: [{port: 9081, protocol: TCP}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: database-and-discovery, namespace: dns-powerdns}
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/name: powerdns}}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: kube-system}}
+          podSelector: {matchLabels: {k8s-app: kube-dns}}
+      ports: [{port: 53, protocol: UDP}, {port: 53, protocol: TCP}]
+    - to:
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: database}}
+          podSelector:
+            matchLabels: {app.kubernetes.io/name: patroni, cluster-name: unified-postgres}
+      ports: [{port: 5432, protocol: TCP}]

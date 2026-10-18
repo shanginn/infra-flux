@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: dns-powerdns
+  annotations:
+    infra.shanginn.io/managed-by: infra-flux/powerdns
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
+    infra.shanginn.io/postgresql-client: 'true'

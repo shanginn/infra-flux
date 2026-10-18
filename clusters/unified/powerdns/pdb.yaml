@@ -1,0 +1,15 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: {name: powerdns-readers, namespace: dns-powerdns}
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels: {app.kubernetes.io/name: powerdns, app.kubernetes.io/component: reader}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: {name: powerdns-api, namespace: dns-powerdns}
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels: {app.kubernetes.io/name: powerdns, app.kubernetes.io/component: api}

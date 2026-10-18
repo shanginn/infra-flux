@@ -1,0 +1,18 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: public-dns
+spec:
+  updateStrategy:
+    $patch: replace
+    type: OnDelete
+  template:
+    spec:
+      containers:
+        - name: coredns
+          args: [-conf, /config/$(NODE_NAME).Corefile]
+          env:
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName

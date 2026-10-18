@@ -22,10 +22,11 @@ request was sent must not trigger replay. An ambiguous write still requires
 reconciliation with authoritative data; this proxy does not make writes exactly
 once. Its per-phase timeouts do not replace the application's absolute deadline.
 
-CoreDNS forwards the preview's UDP/TCP DNS ports to the existing old PowerDNS
-Service. This preserves the DNS ports of the writer alias during a later selector
-switch. Never point that forwarding destination at the alias being switched or
-at the preview itself. The process readiness probe keeps DNS available when both
+The `rubase-proxy` component forwards the preview's UDP/TCP DNS ports directly
+to both private PowerDNS reader entries on port 5354. It has no DNS dependency
+on either old Service, so a later alias switch cannot create a forwarding loop.
+Before the final import, these readers contain only the target health seed;
+customer DNS remains on the unchanged old Services. The process readiness probe keeps DNS available when both
 API entries are down; `/ready` on port 8404 separately reports API availability.
 HAProxy and DNS metrics are on ports 8404 and 9153, restricted to the monitoring
 namespace. The VMPodScrape selects only these Pods and scrapes both ports every
@@ -40,7 +41,8 @@ two-key contract: `MSK_VPN_ADDRESS` and `FIN_VPN_ADDRESS`. The proxy also requir
 a separate `flux-system/legacy-dns-proxy` ConfigMap containing exactly:
 
 - `LEGACY_POWERDNS_DNS_SERVICE_ADDRESS`: the observed ClusterIP of the old DNS
-  Service that continues selecting the old PowerDNS Pod.
+  Service that continues selecting the old PowerDNS Pod. Retained in this
+  private contract; the active direct-reader Corefile does not use it.
 - `LEGACY_DNS_PROXY_CONFIG_REVISION`: SHA-256 of compact, sorted-key JSON containing
   the three address values above. Use `config_revision()` in the validation
   helper. This annotation rolls the Pods when private substitutions change;

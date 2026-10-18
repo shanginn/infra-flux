@@ -35,15 +35,20 @@ class RouteTests(unittest.TestCase):
         cls.old = {site:render('clusters/'+site+'/vibesites-dns') for site in ['rubase','contabo']}
         cls.legacy = {site:render('clusters/'+site+'/vibesites-dns','legacy-dnsdist') for site in cls.old}
         cls.proxyold=render('clusters/rubase/vibesites-dns/legacy-api-proxy')
-        cls.proxy=render('clusters/rubase/vibesites-dns/legacy-api-proxy','rubase-proxy')
+        cls.proxy=cls.proxyold
         cls.publicold=render('clusters/unified/public-dns')
         cls.public=render('clusters/unified/public-dns','unified-public')
         cls.contabo=render('bootstrap/dns/read-route/contabo-forwarder')
         cls.zones=set((ROOT/'clusters/unified/dns-authority/zones.txt').read_text().splitlines())
 
-    def test_no_active_reference(self):
+    def test_only_separate_rubase_preview_references_routes(self):
+        allowed=ROOT/'clusters/rubase/vibesites-dns/legacy-api-proxy/kustomization.yaml'
         for folder in ['clusters','components']:
             for path in (ROOT/folder).rglob('*.yaml'):
+                if path==allowed:
+                    self.assertEqual(yaml.safe_load(path.read_text())['components'],
+                                     ['../../../../bootstrap/dns/read-route/rubase-proxy'])
+                    continue
                 self.assertNotIn('bootstrap/dns/read-route',path.read_text(),str(path))
 
     def test_legacy_changes_only_dnsdist_and_one_config_key(self):
@@ -82,10 +87,12 @@ class RouteTests(unittest.TestCase):
         text=config(self.proxy,'legacy-pdns-api-proxy-config','Corefile')
         self.assertNotIn('LEGACY_POWERDNS_DNS_SERVICE_ADDRESS',text)
         self.assertIn('${MSK_VPN_ADDRESS}:5354 ${FIN_VPN_ADDRESS}:5354',text)
-        self.assertEqual(config(self.proxy,'legacy-pdns-api-proxy-config','haproxy.cfg'),config(self.proxyold,'legacy-pdns-api-proxy-config','haproxy.cfg'))
+        leaf=ROOT/'clusters/rubase/vibesites-dns/legacy-api-proxy'
+        self.assertEqual(config(self.proxy,'legacy-pdns-api-proxy-config','haproxy.cfg'),(leaf/'haproxy.cfg').read_text())
         policy=one(self.proxy,'NetworkPolicy','legacy-pdns-api-proxy')['spec']
-        self.assertEqual(policy['ingress'],one(self.proxyold,'NetworkPolicy','legacy-pdns-api-proxy')['spec']['ingress'])
-        self.assertEqual(policy['egress'][0],one(self.proxyold,'NetworkPolicy','legacy-pdns-api-proxy')['spec']['egress'][0])
+        original=yaml.safe_load((leaf/'network-policy.yaml').read_text())['spec']
+        self.assertEqual(policy['ingress'],original['ingress'])
+        self.assertEqual(policy['egress'][0],original['egress'][0])
         self.assertEqual(policy['egress'][1]['ports'],[{'port':5354,'protocol':'UDP'},{'port':5354,'protocol':'TCP'}])
         self.assertNotIn('podSelector',str(policy['egress']))
 

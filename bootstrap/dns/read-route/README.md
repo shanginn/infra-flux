@@ -1,6 +1,7 @@
 # Optional PowerDNS read routes
 
-These files are **inactive**. No cluster root or component references them.
+Only `rubase-proxy` is referenced, by the separate Rubase preview owner.
+The public routes and Contabo forwarder remain **inactive**.
 The three Kustomize Components are alternatives for existing owners; the fourth
 directory creates only a separately labelled DNS preview. They do not import
 data, fence a database, enable a writer, change registrar settings or switch an
@@ -111,6 +112,14 @@ Primary references: [dnsdist server configuration](https://www.dnsdist.org/refer
 [CoreDNS server-block routing](https://coredns.io/manual/toc/#server-blocks).
 
 ## Activation order
+
+The isolated Rubase preview can exercise its direct private-reader route before
+the final import, while both old Service selectors and all public DNS routes
+remain unchanged. At that stage it serves the target's synthetic health seed;
+its customer answers are not migration acceptance. This removes the future
+forwarding loop without pausing existing writers. Validate its real Pod paths,
+API requests and collected metrics, and retain the private map unchanged.
+The following gates apply before changing any retained production read path.
 
 1. Complete the reviewed database fence, a fresh fenced backup and isolated
    restoration, explicit-ID import, six sequence readbacks and complete table

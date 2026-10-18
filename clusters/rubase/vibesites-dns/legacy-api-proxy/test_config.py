@@ -114,10 +114,16 @@ class ProxyIsolationTests(unittest.TestCase):
         self.assertEqual(vpn['to'], [{'ipBlock': {'cidr': '${MSK_VPN_ADDRESS}/32'}}, {'ipBlock': {'cidr': '${FIN_VPN_ADDRESS}/32'}}])
         self.assertEqual(vpn['ports'], [{'port': 18081, 'protocol': 'TCP'}])
         corefile = self.by_kind['ConfigMap']['data']['Corefile']
-        self.assertIn('forward . ${LEGACY_POWERDNS_DNS_SERVICE_ADDRESS}:53', corefile)
+        self.assertIn('forward . ${MSK_VPN_ADDRESS}:5354 ${FIN_VPN_ADDRESS}:5354', corefile)
+        self.assertNotIn('LEGACY_POWERDNS_DNS_SERVICE_ADDRESS', corefile)
+        self.assertEqual(policy['egress'][1], {
+            'to': vpn['to'],
+            'ports': [{'port': 5354, 'protocol': 'UDP'}, {'port': 5354, 'protocol': 'TCP'}],
+        })
         self.assertNotIn('cache', corefile)
         all_text = json.dumps(self.objects)
-        self.assertEqual(set(re.findall(r'\$\{([A-Z_]+)\}', all_text)), set(ADDRESS_KEYS) | {REVISION_KEY})
+        self.assertEqual(set(re.findall(r'\$\{([A-Z_]+)\}', all_text)),
+                         {'MSK_VPN_ADDRESS', 'FIN_VPN_ADDRESS', REVISION_KEY})
 
     def test_bad_substitutions_fail_closed(self):
         good = dict(zip(ADDRESS_KEYS, ('100.64.0.1', '100.64.0.2', '10.43.1.1')))

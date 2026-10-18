@@ -1,0 +1,24 @@
+# Bootstrap this one Flux object after its private ConfigMap is verified.
+# It owns only the temporary writer egress policies, not the existing DNS stack.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: legacy-powerdns-writer-egress
+  namespace: flux-system
+spec:
+  suspend: false
+  interval: 5m
+  retryInterval: 1m
+  timeout: 2m
+  path: ./clusters/rubase/vibesites-dns/legacy-writer-egress
+  prune: true
+  dependsOn:
+    - name: vibesites-dns
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: legacy-dns-network
+        optional: false

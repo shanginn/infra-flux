@@ -89,6 +89,8 @@ class ProxyIsolationTests(unittest.TestCase):
             self.assertTrue(container['securityContext']['readOnlyRootFilesystem'])
             self.assertEqual(container['securityContext']['capabilities']['drop'], ['ALL'])
             self.assertTrue(all('hostPort' not in p for p in container['ports']))
+        self.assertNotIn('add', proxy['securityContext']['capabilities'])
+        self.assertEqual(dns['securityContext']['capabilities']['add'], ['NET_BIND_SERVICE'])
         self.assertEqual(template['metadata']['annotations']['infra.shanginn.io/private-config-revision'], '${' + REVISION_KEY + '}')
 
     def test_connections_retry_but_received_writes_do_not(self):

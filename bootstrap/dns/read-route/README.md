@@ -1,7 +1,8 @@
 # Optional PowerDNS read routes
 
-Only `rubase-proxy` is referenced, by the separate Rubase preview owner.
-The public routes and Contabo forwarder remain **inactive**.
+`rubase-proxy` is referenced by the separate Rubase preview owner.
+The Contabo preview uses a detached standalone owner; the two public-route
+components remain **inactive**.
 The three Kustomize Components are alternatives for existing owners; the fourth
 directory creates only a separately labelled DNS preview. They do not import
 data, fence a database, enable a writer, change registrar settings or switch an

@@ -118,7 +118,7 @@ class BridgeRenderTests(unittest.TestCase):
     def test_bridge_policies_only_exact_source_variables_and_ports(self):
         for name, variables, ports in (
             ('legacy-bridge-readers', ('LEGACY_CONTABO_VPN_CIDR', 'LEGACY_RUBASE_VPN_CIDR'), {(5353, 'UDP'), (5353, 'TCP')}),
-            ('legacy-bridge-api', SOURCES, {(8081, 'TCP')}),
+            ('legacy-bridge-api', SOURCES + ('LEGACY_RUBASE_VPN_CIDR',), {(8081, 'TCP')}),
         ):
             policy = pick(self.objects, 'NetworkPolicy', name)['spec']
             self.assertEqual(policy['policyTypes'], ['Ingress'])
@@ -156,6 +156,15 @@ class BridgeRenderTests(unittest.TestCase):
         config = generated(objects, 'powerdns-api-config')['data']['api.conf']
         allow = next(line.split('=', 1)[1] for line in config.splitlines() if line.startswith('webserver-allow-from='))
         self.assertEqual(allow.split(','), ['127.0.0.1', '10.0.0.0/8'] + [values[key] for key in SOURCES])
+        policy = pick(objects, 'NetworkPolicy', 'legacy-bridge-api')['spec']
+        self.assertEqual(policy['podSelector']['matchLabels'], {
+            'app.kubernetes.io/name': 'powerdns', 'app.kubernetes.io/component': 'api',
+        })
+        admitted = [peer['ipBlock']['cidr'] for peer in policy['ingress'][0]['from']]
+        self.assertEqual(admitted, [values[key] for key in SOURCES] + [values['LEGACY_RUBASE_VPN_CIDR']])
+        self.assertTrue(all(ipaddress.IPv4Network(value).prefixlen == 32 for value in admitted))
+        self.assertNotIn(values['LEGACY_CONTABO_VPN_CIDR'], admitted)
+        self.assertNotIn(values['LEGACY_RUBASE_VPN_CIDR'], allow.split(','))
 
     def test_substitution_contract_rejects_broad_cidr_and_stale_revision(self):
         for key, value in ((SOURCES[0], '10.0.0.0/8'), ('MSK_VPN_ADDRESS', '8.8.8.8'), ('POWERDNS_API_ACCESS_REVISION', '0' * 64)):

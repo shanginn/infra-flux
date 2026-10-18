@@ -54,11 +54,20 @@ value after Kustomize generated the ConfigMap name. The render guard validates
 this digest. No whole Pod/VPN CIDR is accepted for a measured source.
 
 `api-access.conf` preserves the existing loopback and cluster allowlist, adding
-only those four `/32`s. Both the API NetworkPolicy and PowerDNS allowlist admit
-the measured sources. The original `api.conf` remains in the unchanged reader
-ConfigMap. Headscale must permit both reader identities to use UDP/TCP 5354 and
-only the writer identity to use TCP 18081. Source NAT prevents the API policy
-from identifying the original client; the entry ACL and API key remain required.
+only those four `/32`s. The API NetworkPolicy additionally admits the original
+writer `LEGACY_RUBASE_VPN_CIDR` on TCP8081. A local endpoint can be filtered in
+the forwarding path before POSTROUTING applies MASQUERADE, while a remote
+endpoint receives traffic already translated by the entry node. Measuring the
+source at the receiving process alone therefore does not establish the source
+evaluated by the network policy. Keep the original writer permission limited
+to its exact `/32`; do not add the reader identity or a VPN range. This policy
+change does not require an API configuration or Pod rollout.
+
+The original `api.conf` remains in the unchanged reader ConfigMap. Headscale
+must permit both reader identities to use UDP/TCP 5354 and only the writer
+identity to use TCP 18081. Source NAT prevents the API from identifying the
+original client; the entry ACL and API key remain required. The PowerDNS
+allowlist continues to use the four measured receiving sources.
 
 ## Validate and activate
 
@@ -90,6 +99,10 @@ From each enrolled legacy host, verify SOA over UDP and TCP through both VPN
 entries. From the writer, make a read-only authenticated API request through
 both entries and verify local and remote endpoint paths. Reader-only API access
 must be denied. Verify denied access to SSH, Kubernetes, etcd and PostgreSQL.
+Bind each successful test to its actual backend using connection metadata.
+Success after SYN retransmission can hide a blocked local endpoint if the
+service selects a remote endpoint on a subsequent attempt; require evidence of
+both paths, preserve all connection timeouts, and inspect listener/drop counters.
 
 From outside the VPN check both VPS public IPv4 and any public IPv6 addresses:
 UDP/TCP 5354 and TCP 18081 must not provide a service. Inspect effective Service

@@ -1,0 +1,88 @@
+---
+- name: Run one explicit legacy-client enrollment phase
+  hosts: legacy_dns_clients
+  become: true
+  gather_facts: false
+  serial: 1
+  any_errors_fatal: true
+  vars:
+    legacy_dns_enroll_enabled: false
+    legacy_dns_enroll_directory: /etc/infra-flux/legacy-dns-enroll
+  tasks:
+    - name: Leave servers unchanged unless explicitly enabled
+      ansible.builtin.meta: end_play
+      when: not legacy_dns_enroll_enabled | bool
+
+    - name: Require separate legacy inventory and explicit phase inputs
+      ansible.builtin.assert:
+        that:
+          - not ansible_check_mode
+          - inventory_hostname not in groups.get('unified', [])
+          - legacy_dns_enroll_inputs is defined
+          - inventory_hostname in legacy_dns_enroll_inputs
+          - legacy_dns_enroll_inputs[inventory_hostname].action in ['inspect', 'stage', 'start', 'register', 'confirm', 'rollback']
+          - legacy_dns_enroll_inputs[inventory_hostname].enabled | default(false) | bool
+
+    - name: Inspect the operation directory without following links
+      ansible.builtin.stat:
+        path: '{{ legacy_dns_enroll_directory }}'
+        follow: false
+      register: legacy_dns_enroll_directory_stat
+
+    - name: Refuse adopting an unsafe operation directory
+      ansible.builtin.assert:
+        that:
+          - not legacy_dns_enroll_directory_stat.stat.exists or (legacy_dns_enroll_directory_stat.stat.isdir and legacy_dns_enroll_directory_stat.stat.uid == 0 and legacy_dns_enroll_directory_stat.stat.mode == '0700')
+
+    - name: Inspect installed helper paths before any copy
+      ansible.builtin.stat:
+        path: '{{ legacy_dns_enroll_directory }}/{{ item }}'
+        checksum_algorithm: sha256
+        follow: false
+      loop:
+        - legacy-dns-client-prepare.py
+        - legacy-dns-client-enroll.py
+      register: legacy_dns_enroll_helpers
+
+    - name: Refuse replacing a helper used by an existing operation
+      ansible.builtin.assert:
+        that:
+          - not item.stat.exists or (item.stat.isreg and item.stat.uid == 0 and item.stat.mode == '0600' and item.stat.checksum == lookup('ansible.builtin.file', playbook_dir ~ '/files/' ~ item.item, rstrip=False) | hash('sha256'))
+      loop: '{{ legacy_dns_enroll_helpers.results }}'
+      no_log: true
+
+    - name: Create protected helper directory
+      ansible.builtin.file:
+        path: '{{ legacy_dns_enroll_directory }}'
+        state: directory
+        owner: root
+        group: root
+        mode: '0700'
+
+    - name: Install immutable operation helper sources
+      ansible.builtin.copy:
+        src: 'files/{{ item }}'
+        dest: '{{ legacy_dns_enroll_directory }}/{{ item }}'
+        owner: root
+        group: root
+        mode: '0600'
+        force: false
+      loop:
+        - legacy-dns-client-prepare.py
+        - legacy-dns-client-enroll.py
+
+    - name: Execute the selected guarded phase
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/python3
+          - /etc/infra-flux/legacy-dns-enroll/legacy-dns-client-enroll.py
+        stdin: '{{ legacy_dns_enroll_inputs[inventory_hostname] | to_json }}'
+      register: legacy_dns_enroll_result
+      changed_when: (legacy_dns_enroll_result.stdout | from_json).changed | default(false)
+      no_log: true
+
+    - name: Report only the operation phase
+      ansible.builtin.debug:
+        msg:
+          operation: '{{ (legacy_dns_enroll_result.stdout | from_json).operation | default("inspection") }}'
+          phase: '{{ (legacy_dns_enroll_result.stdout | from_json).phase | default("inspection") }}'

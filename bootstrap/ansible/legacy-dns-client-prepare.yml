@@ -1,0 +1,40 @@
+---
+- name: Prepare only an inactive VPN client on existing legacy DNS hosts
+  hosts: legacy_dns_clients
+  become: true
+  gather_facts: false
+  serial: 1
+  any_errors_fatal: true
+  vars:
+    legacy_dns_prepare_enabled: false
+  tasks:
+    - name: Leave servers unchanged unless explicitly enabled
+      ansible.builtin.meta: end_play
+      when: not legacy_dns_prepare_enabled | bool
+
+    - name: Require a separate inventory and explicit private reviewed inputs
+      ansible.builtin.assert:
+        that:
+          - not ansible_check_mode
+          - inventory_hostname not in groups.get('unified', [])
+          - legacy_dns_prepare_inputs is defined
+          - inventory_hostname in legacy_dns_prepare_inputs
+          - legacy_dns_prepare_inputs[inventory_hostname].action == 'prepare'
+          - legacy_dns_prepare_inputs[inventory_hostname].enabled | bool
+          - legacy_dns_prepare_inputs[inventory_hostname].admin_address is defined
+          - legacy_dns_prepare_inputs[inventory_hostname].expected is defined
+
+    - name: Install the pinned package behind an inactive service gate
+      ansible.builtin.command:
+        argv:
+          - python3
+          - -c
+          - "{{ lookup('ansible.builtin.file', playbook_dir ~ '/files/legacy-dns-client-prepare.py', rstrip=False) }}"
+        stdin: '{{ legacy_dns_prepare_inputs[inventory_hostname] | to_json }}'
+      no_log: true
+      register: legacy_dns_prepared
+      changed_when: (legacy_dns_prepared.stdout | from_json).changed | default(false)
+
+    - name: Report only package preparation status
+      ansible.builtin.debug:
+        msg: '{{ legacy_dns_prepared.stdout | from_json }}'

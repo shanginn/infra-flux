@@ -194,6 +194,15 @@ def check_mount(record, initial=False):
     require(MOUNT.stat().st_dev != ROOT.stat().st_dev, 'DNS data is on the root filesystem')
 
 
+def check_data(record):
+    s = DATA.lstat()
+    # kubelet fsGroup=53 adds group access and setgid to this owned volume root.
+    require(stat.S_ISDIR(s.st_mode) and s.st_uid == 53 and s.st_gid == 53
+            and stat.S_IMODE(s.st_mode) in (0o700, 0o2770), 'Unexpected DNS data directory owner or mode')
+    # Loop device numbers may change after boot; the filesystem UUID was checked above.
+    require(s.st_ino == record['data_inode'], 'DNS data directory inode changed')
+
+
 def verify(record):
     require(record['phase'] in ('data', 'ready'), 'Volume preparation is incomplete')
     require(identity(directory(ROOT, 0o711)) == record['root_identity'], 'Parent directory identity changed')
@@ -202,11 +211,7 @@ def verify(record):
         regular(unit, 0o644)
         require(unit.read_text() == content, 'Owned systemd unit changed')
     check_mount(record)
-    s = DATA.lstat()
-    require(stat.S_ISDIR(s.st_mode) and s.st_uid == 53 and s.st_gid == 53
-            and stat.S_IMODE(s.st_mode) == 0o700, 'Unexpected DNS data directory owner or mode')
-    # Loop device numbers may change after boot; the filesystem UUID was checked above.
-    require(s.st_ino == record['data_inode'], 'DNS data directory inode changed')
+    check_data(record)
     reserve(image_shape(record))
 
 

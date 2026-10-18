@@ -8,7 +8,7 @@ fingerprint() {
         /run/transfer/named.conf.transfers /zones/* | sha256sum | cut -d ' ' -f 1
 }
 
-/usr/sbin/named-checkconf -z /config/named.conf >/dev/null
+/usr/bin/named-checkconf -z /config/named.conf >/dev/null
 loaded_fingerprint="$(fingerprint)"
 /usr/sbin/named -g -c /config/named.conf -n 2 &
 named_pid=$!
@@ -30,7 +30,7 @@ trap stop TERM INT
         test "$next_fingerprint" != "$loaded_fingerprint" || continue
         # Validate a stable projected generation before touching the running
         # server. Keep the old authority available if a new config is invalid.
-        if ! /usr/sbin/named-checkconf -z /config/named.conf >/dev/null 2>&1; then
+        if ! /usr/bin/named-checkconf -z /config/named.conf >/dev/null 2>&1; then
             if test "$next_fingerprint" != "$rejected_fingerprint"; then
                 echo 'BIND reload skipped: projected configuration failed validation' >&2
                 rejected_fingerprint="$next_fingerprint"

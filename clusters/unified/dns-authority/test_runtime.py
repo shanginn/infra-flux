@@ -44,7 +44,7 @@ while True: time.sleep(.02)
 ''' % str(p)
             (p/'bin'/'named').write_text('#!'+sys.executable+'\n'+named)
             for f in (p/'bin').iterdir(): f.chmod(0o755)
-            script=(ROOT/'run.sh').read_text().replace('/usr/sbin/named-checkconf',str(p/'bin'/'named-checkconf')).replace('/usr/sbin/named',str(p/'bin'/'named')).replace('/config/',str(p/'config')+'/').replace('/zones/',str(p/'zones')+'/').replace('/run/transfer/',str(p/'transfer')+'/').replace('sleep 5','sleep 0.1')
+            script=(ROOT/'run.sh').read_text().replace('/usr/bin/named-checkconf',str(p/'bin'/'named-checkconf')).replace('/usr/sbin/named',str(p/'bin'/'named')).replace('/config/',str(p/'config')+'/').replace('/zones/',str(p/'zones')+'/').replace('/run/transfer/',str(p/'transfer')+'/').replace('sleep 5','sleep 0.1')
             (p/'run.sh').write_text(script)
             proc=subprocess.Popen(['/bin/sh',str(p/'run.sh')],stdout=subprocess.PIPE,stderr=subprocess.PIPE,start_new_session=True)
             def wait_until(fn):

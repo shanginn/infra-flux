@@ -63,7 +63,10 @@
           - --expected-node
           - '{{ inventory_hostname }}'
       register: dns_volume_prepare
-      changed_when: (dns_volume_prepare.stdout | from_json).changed
+      changed_when: >-
+        (dns_volume_prepare.rc | default(1)) == 0 and
+        (dns_volume_prepare.stdout | default('') | length) > 0 and
+        (dns_volume_prepare.stdout | from_json).changed
     - name: Read back ownership and hard capacity
       ansible.builtin.command:
         argv: [/usr/bin/python3, /etc/infra-flux/dns-volume.py, verify]

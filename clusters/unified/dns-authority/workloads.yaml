@@ -28,7 +28,7 @@ spec:
       initContainers:
         - name: check-config
           image: docker.io/internetsystemsconsortium/bind9:9.20@sha256:071465f88068854d0ceadd9b985fb1acae4071e80754e545cd811fde57541ad0
-          command: [/usr/sbin/named-checkconf, -z, /config/named.conf]
+          command: [/usr/bin/named-checkconf, -z, /config/named.conf]
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
@@ -141,7 +141,7 @@ spec:
       initContainers:
         - name: check-config
           image: docker.io/internetsystemsconsortium/bind9:9.20@sha256:071465f88068854d0ceadd9b985fb1acae4071e80754e545cd811fde57541ad0
-          command: [/usr/sbin/named-checkconf, -z, /config/named.conf]
+          command: [/usr/bin/named-checkconf, -z, /config/named.conf]
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true

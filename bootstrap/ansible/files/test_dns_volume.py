@@ -235,6 +235,32 @@ class Safety(unittest.TestCase):
 
 
 class Ownership(unittest.TestCase):
+    def test_data_initial_and_kubelet_fsgroup_modes_are_accepted(self):
+        for mode in (0o700, 0o2770):
+            item = types.SimpleNamespace(st_mode=stat.S_IFDIR | mode, st_uid=53, st_gid=53, st_ino=42)
+            with patch.object(pathlib.Path, 'lstat', return_value=item):
+                v.check_data({'data_inode': 42})
+
+    def test_data_world_access_and_unexpected_modes_are_rejected(self):
+        for mode in (0o777, 0o2777, 0o755, 0o770, 0o2700):
+            item = types.SimpleNamespace(st_mode=stat.S_IFDIR | mode, st_uid=53, st_gid=53, st_ino=42)
+            with patch.object(pathlib.Path, 'lstat', return_value=item):
+                with self.assertRaisesRegex(RuntimeError, 'owner or mode'):
+                    v.check_data({'data_inode': 42})
+
+    def test_data_fsgroup_mode_does_not_relax_owner_or_inode(self):
+        for uid, gid, inode in [(0, 53, 42), (53, 0, 42), (53, 53, 43)]:
+            item = types.SimpleNamespace(st_mode=stat.S_IFDIR | 0o2770, st_uid=uid, st_gid=gid, st_ino=inode)
+            with patch.object(pathlib.Path, 'lstat', return_value=item):
+                with self.assertRaises(RuntimeError):
+                    v.check_data({'data_inode': 42})
+
+    def test_data_symlink_is_rejected_even_with_expected_uid_gid(self):
+        item = types.SimpleNamespace(st_mode=stat.S_IFLNK | 0o700, st_uid=53, st_gid=53, st_ino=42)
+        with patch.object(pathlib.Path, 'lstat', return_value=item):
+            with self.assertRaisesRegex(RuntimeError, 'owner or mode'):
+                v.check_data({'data_inode': 42})
+
     def test_symlink_and_hardlinked_image_are_rejected(self):
         for mode, links in [(stat.S_IFLNK | 0o600, 1), (stat.S_IFREG | 0o600, 2)]:
             item = types.SimpleNamespace(st_mode=mode, st_uid=0, st_gid=0, st_nlink=links)

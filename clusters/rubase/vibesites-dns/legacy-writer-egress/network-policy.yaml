@@ -1,0 +1,38 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: legacy-powerdns-app-egress
+  namespace: vibesites-pi
+  labels:
+    app.kubernetes.io/part-of: legacy-powerdns-writer-egress
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: vibesites-pi
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - ipBlock: {cidr: "${MSK_VPN_ADDRESS}/32"}
+        - ipBlock: {cidr: "${FIN_VPN_ADDRESS}/32"}
+      ports:
+        - {protocol: TCP, port: 18081}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: legacy-powerdns-worker-egress
+  namespace: vibesites-pi
+  labels:
+    app.kubernetes.io/part-of: legacy-powerdns-writer-egress
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: vibesites-pi-worker
+      app.kubernetes.io/component: temporal-worker
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - ipBlock: {cidr: "${MSK_VPN_ADDRESS}/32"}
+        - ipBlock: {cidr: "${FIN_VPN_ADDRESS}/32"}
+      ports:
+        - {protocol: TCP, port: 18081}

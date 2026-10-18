@@ -28,3 +28,6 @@ spec:
       - kind: ConfigMap
         name: unified-network
         optional: false
+      - kind: ConfigMap
+        name: unified-legacy-dns
+        optional: false

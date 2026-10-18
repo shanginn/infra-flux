@@ -164,7 +164,9 @@ def hosts_append(before, hostname, address):
 
 
 def hosts_remove(current, line):
-    require(current.splitlines(keepends=True).count(line) == 1, 'Owned relay line missing or duplicated')
+    # The timer can fire before append, or cleanup can have completed before an
+    # interrupted rollback persisted its final phase. Absence needs no repair.
+    require(current.splitlines(keepends=True).count(line) <= 1, 'Owned relay line duplicated')
     return b''.join(x for x in current.splitlines(keepends=True) if x != line)
 
 
@@ -460,8 +462,9 @@ def rollback(record, settings=None):
     if record.get('hosts_line'):
         p.secure_regular(HOSTS)
         current = HOSTS.read_bytes()
-        atomic(HOSTS, hosts_remove(current, record['hosts_line'].encode()),
-               HOSTS.stat().st_mode & 0o777, HOSTS.stat().st_gid)
+        remaining = hosts_remove(current, record['hosts_line'].encode())
+        if remaining != current:
+            atomic(HOSTS, remaining, HOSTS.stat().st_mode & 0o777, HOSTS.stat().st_gid)
     current = baseline_for(record)
     no_network_remnants(current)
     record['rollback_protected_drift'] = {key: value != record['guard'][key] for key, value in guard(current).items()}

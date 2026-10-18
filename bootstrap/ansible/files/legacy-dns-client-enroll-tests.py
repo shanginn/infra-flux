@@ -56,6 +56,53 @@ class EnrollmentTests(unittest.TestCase):
         path.parent.mkdir(exist_ok=True)
         path.write_bytes(data)
 
+    def test_stage_arms_durable_timer_before_owned_hosts_change_and_keeps_gate(self):
+        for name in ('RECORD', 'CONFIG', 'DROP', 'HELPER', 'PREPARE'):
+            self.patch(name, self.root / name.lower())
+        self.patch('DIRECTORY', self.root)
+        self.patch('UNIT_DIR', self.root)
+        m.HELPER.write_text('enrollment source')
+        m.PREPARE.write_text('preparation source')
+        self.fake.STATE = self.root / 'prepared.json'
+        self.fake.STATE.write_text('owned preparation')
+        self.fake.DROP.write_text(self.fake.DROP_CONTENT)
+        m.HOSTS.write_bytes(b'127.0.0.1 localhost\n')
+        hosts_identity = lambda: {'sha256': m.sha(m.HOSTS.read_bytes()), 'mode': 0o644, 'uid': 0, 'gid': 0, 'link': None}
+        baseline = {'machine_id_sha256': 'machine', 'boot_id': 'boot', 'os': {}, 'arch': 'amd64',
+                    'services': {}, 'hosts': hosts_identity(), 'resolver': {}, 'other_packages_sha256': 'packages',
+                    'network': {'admin_address': '192.0.2.9', 'admin_route': {}}, 'firewall': {}}
+        self.fake.read_state = Mock(return_value={'phase': 'verified', 'baseline': baseline})
+        self.fake.verify_prepared = Mock(side_effect=lambda: self.events.append(('prepared', True)))
+        self.fake.baseline = Mock(return_value=baseline)
+        self.fake.paths_absent = Mock()
+        self.fake.file_identity = Mock(side_effect=lambda path: hosts_identity())
+        def output(argv, **kw):
+            self.events.append(('command', argv))
+            return 'not-found\n' if '--property=LoadState' in argv else ''
+        self.fake.output.side_effect = output
+        settings = {'operation': 'stage-test', 'rollback_seconds': 600,
+                    'prepare_receipt_sha256': m.sha(self.fake.STATE.read_bytes()),
+                    'admin_address': '192.0.2.9', 'expected_guard': m.guard(baseline),
+                    'server_url': 'https://vpn.example.org', 'hostname': 'legacy-example',
+                    'coordinator_evidence_sha256': 'a' * 64, 'relay_ipv4': '1.1.1.1'}
+        result = m.stage(settings)
+        self.assertEqual(result['phase'], 'staged')
+        self.assertTrue(self.fake.DROP.exists())
+        intent = self.events.index(('saved', 'stage-intent'))
+        config = self.events.index(('write', m.CONFIG.name))
+        timer = self.events.index(('command', ['systemctl', 'enable', '--now', m.UNIT + '.timer']))
+        hosts = self.events.index(('write', m.HOSTS.name))
+        self.assertLess(intent, config)
+        self.assertLess(timer, hosts)
+        self.assertFalse(any(e == ('command', ['systemctl', 'start', 'tailscaled.service']) for e in self.events))
+
+    def test_interrupted_stage_is_not_replaced_by_another_operation(self):
+        self.patch('RECORD', self.root / 'operation.json')
+        m.RECORD.write_text('{"phase":"stage-intent"}')
+        with self.assertRaisesRegex(RuntimeError, 'already exists'):
+            m.stage({'operation': 'a-new-operation'})
+        self.fake.output.assert_not_called()
+
     def test_start_persists_intent_before_gate_removal_or_start(self):
         self.fake.DROP.write_text(self.fake.DROP_CONTENT)
         self.patch('client_check', Mock(return_value={'state': 'NeedsLogin'}))
@@ -123,6 +170,39 @@ class EnrollmentTests(unittest.TestCase):
             m.rollback(record('registered'))
         self.assertTrue(self.fake.DROP.exists())
         self.assertFalse(any(e == ('command', ['systemctl', 'stop', 'tailscaled.service']) for e in self.events))
+
+    def test_rollback_relay_not_appended_finishes_without_rewriting_hosts(self):
+        self.patch('guard', Mock(return_value={'machine_id_sha256': 'machine'}))
+        before = b'127.0.0.1 localhost\n192.0.2.2 unrelated\n'
+        m.HOSTS.write_bytes(before)
+        r = record('stage-intent')
+        r['hosts_line'] = '1.1.1.1 vpn.example.org # infra-flux legacy-dns coordinator relay\n'
+        self.assertEqual(m.rollback(r)['phase'], 'rolled-back')
+        self.assertEqual(m.HOSTS.read_bytes(), before)
+        self.assertNotIn(('write', m.HOSTS.name), self.events)
+
+    def test_rollback_relay_already_removed_finishes_after_interrupted_cleanup(self):
+        self.patch('guard', Mock(return_value={'machine_id_sha256': 'machine'}))
+        unrelated = b'127.0.0.1 localhost\n192.0.2.3 changed-by-another-service\n'
+        m.HOSTS.write_bytes(unrelated)
+        r = record('rollback-intent')
+        r['hosts_line'] = '1.1.1.1 vpn.example.org # infra-flux legacy-dns coordinator relay\n'
+        self.assertEqual(m.rollback(r)['phase'], 'rolled-back')
+        self.assertEqual(m.HOSTS.read_bytes(), unrelated)
+        self.assertNotIn(('write', m.HOSTS.name), self.events)
+
+    def test_duplicate_owned_relay_refuses_cleanup_after_containing_daemon(self):
+        line = '1.1.1.1 vpn.example.org # infra-flux legacy-dns coordinator relay\n'
+        before = b'127.0.0.1 localhost\n' + line.encode() * 2
+        m.HOSTS.write_bytes(before)
+        r = record('registered'); r['hosts_line'] = line
+        with self.assertRaisesRegex(RuntimeError, 'duplicated'):
+            m.rollback(r)
+        self.assertTrue(self.fake.DROP.exists())
+        self.assertIn(('command', ['systemctl', 'stop', 'tailscaled.service']), self.events)
+        self.assertEqual(m.HOSTS.read_bytes(), before)
+        self.assertEqual(r['phase'], 'rollback-intent')
+        m.disarm.assert_not_called()
 
     def test_rollback_after_confirmation_is_noop(self):
         result = m.rollback(record('confirmed'))
@@ -225,6 +305,10 @@ class PureGuardsTests(unittest.TestCase):
         before = b'127.0.0.1 localhost\n'
         after, line = m.hosts_append(before, 'vpn.example.org', '1.1.1.1')
         self.assertEqual(m.hosts_remove(after + b'192.0.2.2 other\n', line), before + b'192.0.2.2 other\n')
+
+    def test_absent_owned_line_leaves_hosts_bytes_unchanged(self):
+        current = b'127.0.0.1 localhost\n192.0.2.2 other\n'
+        self.assertEqual(m.hosts_remove(current, b'absent owned line\n'), current)
 
     def test_hosts_duplicate_and_competing_alias_refused(self):
         for before in (b'127.0.0.1 localhost VPN.EXAMPLE.ORG\n', b'127.0.0.1 localhost'):

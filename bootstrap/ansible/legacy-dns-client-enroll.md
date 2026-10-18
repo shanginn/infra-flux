@@ -73,7 +73,9 @@ rollback sees `confirmed` and becomes a no-op; an expired deadline cannot confir
 Manual rollback is the same installed helper's `rollback <operation>` subcommand.
 It restores the preparation gate **before** stopping and disabling the owned
 daemon. It removes only the exact owned hosts line, retaining unrelated hosts
-changes, and removes a leftover key file. It keeps the Tailscale node state,
+changes, and removes a leftover key file. If the line was never appended or a
+previous rollback already removed it, hosts cleanup is a no-op and does not
+rewrite the file. Duplicate exact owned lines still refuse cleanup. It keeps the Tailscale node state,
 configuration, operation receipt and helper files for diagnosis. It never
 uninstalls, resets enrollment, deletes coordinator identities, reboots, or
 flushes another service's routes/firewall. Offline peers and changed old service

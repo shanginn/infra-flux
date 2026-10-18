@@ -1,0 +1,87 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vibesites-dns-config
+data:
+  dnsdist.conf: |
+    setLocal('0.0.0.0:53')
+    setACL({'0.0.0.0/0', '::/0'})
+    webserver('0.0.0.0:8083')
+    setWebserverConfig({
+      password='unused',
+      apiKey='unused',
+      statsRequireAuthentication=false,
+      dashboardRequiresAuthentication=true,
+      apiRequiresAuthentication=true,
+      acl='10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16'
+    })
+
+    newServer({
+      address='__BIND9_ADDRESS__',
+      name='bind9',
+      pool='bind9',
+      checkName='shanginn.io.',
+      checkType='SOA',
+      checkInterval=10,
+      maxCheckFailures=3,
+      rise=2
+    })
+
+    setServFailWhenNoServer(true)
+
+    newServer({
+      address='${MSK_VPN_ADDRESS}:5354',
+      name='unified-msk',
+      pool='vibesites',
+      checkName='health.test.',
+      checkType='SOA',
+      mustResolve=true,
+      checkInterval=2,
+      maxCheckFailures=2,
+      rise=2
+    })
+
+    newServer({
+      address='${FIN_VPN_ADDRESS}:5354',
+      name='unified-fin',
+      pool='vibesites',
+      checkName='health.test.',
+      checkType='SOA',
+      mustResolve=true,
+      checkInterval=2,
+      maxCheckFailures=2,
+      rise=2
+    })
+
+
+    bind_zones = newSuffixMatchNode()
+    bind_zones:add(newDNSName('aufstaff.ru.'))
+    bind_zones:add(newDNSName('flowerworks.ru.'))
+    bind_zones:add(newDNSName('flowerswork.ru.'))
+    bind_zones:add(newDNSName('generach.ru.'))
+    bind_zones:add(newDNSName('itaisolutions.ru.'))
+    bind_zones:add(newDNSName('mystaro.ru.'))
+    bind_zones:add(newDNSName('shanghaiauto.ru.'))
+    bind_zones:add(newDNSName('shanginn.io.'))
+    bind_zones:add(newDNSName('shanginn.ru.'))
+    bind_zones:add(newDNSName('sistent.ru.'))
+    bind_zones:add(newDNSName('sputi.ru.'))
+    bind_zones:add(newDNSName('vibesites.ru.'))
+    bind_zones:add(newDNSName('xn--80aacc0bc7ayl4g.xn--p1ai.'))
+    bind_zones:add(newDNSName('xn--80aafk8cdei3c.xn--p1ai.'))
+    bind_zones:add(newDNSName('xn--80aakfartrcj1ct.xn--p1ai.'))
+    bind_zones:add(newDNSName('xn--80aao3bdhk2b9b.xn--p1ai.'))
+    bind_zones:add(newDNSName('xn--80afga3bt4c.xn--p1ai.'))
+    bind_zones:add(newDNSName('xn--80ahnllf1ado3f.xn--p1ai.'))
+    bind_zones:add(newDNSName('xn--80ajijindid5e.xn--p1ai.'))
+    bind_zones:add(newDNSName('xn--80alfarbic0a3a.xn--p1ai.'))
+    bind_zones:add(newDNSName('xn--b1abcbftdmxceabz.xn--p1ai.'))
+    bind_zones:add(newDNSName('xn--e1afqnbgc.xn--p1ai.'))
+
+    health_zones = newSuffixMatchNode()
+    health_zones:add(newDNSName('health.test.'))
+    health_zones:add(newDNSName('vibesites-dns-health.test.'))
+    addAction(SuffixMatchNodeRule(health_zones), RCodeAction(DNSRCode.REFUSED))
+
+    addAction(SuffixMatchNodeRule(bind_zones), PoolAction('bind9'))
+    addAction(AllRule(), PoolAction('vibesites'))

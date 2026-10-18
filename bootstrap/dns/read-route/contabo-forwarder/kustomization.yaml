@@ -1,0 +1,11 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: vibesites-dns
+resources:
+- deployment.yaml
+- network-policy.yaml
+- preview-service.yaml
+configMapGenerator:
+- name: legacy-pdns-read-forwarder-config
+  files:
+  - Corefile

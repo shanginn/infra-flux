@@ -1,0 +1,24 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: public-dns-powerdns-readers
+spec:
+  podSelector:
+    matchLabels:
+      app: public-dns
+  policyTypes:
+  - Egress
+  egress:
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: dns-powerdns
+      podSelector:
+        matchLabels:
+          app.kubernetes.io/name: powerdns
+          app.kubernetes.io/component: reader
+    ports:
+    - port: 5353
+      protocol: UDP
+    - port: 5353
+      protocol: TCP

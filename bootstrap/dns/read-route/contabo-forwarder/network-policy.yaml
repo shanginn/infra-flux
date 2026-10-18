@@ -1,0 +1,37 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: legacy-pdns-read-forwarder
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: legacy-pdns-read-forwarder
+  policyTypes:
+  - Ingress
+  - Egress
+  egress:
+  - to:
+    - ipBlock:
+        cidr: ${MSK_VPN_ADDRESS}/32
+    - ipBlock:
+        cidr: ${FIN_VPN_ADDRESS}/32
+    ports:
+    - port: 5354
+      protocol: UDP
+    - port: 5354
+      protocol: TCP
+  ingress:
+  - from:
+    - namespaceSelector: {}
+    ports:
+    - port: 5353
+      protocol: TCP
+    - port: 5353
+      protocol: UDP
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: monitoring
+    ports:
+    - port: 9153
+      protocol: TCP

@@ -96,7 +96,7 @@ spec:
             - {name: api-access, mountPath: /var/run/secrets/kubernetes.io/serviceaccount, readOnly: true}
       volumes:
         - name: config
-          configMap: {name: public-dns-config}
+          configMap: {name: public-dns-config-8kb7hccgc2}
         - name: seed
           configMap: {name: public-dns-zone}
         - name: zone

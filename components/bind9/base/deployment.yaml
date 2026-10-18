@@ -93,7 +93,7 @@ spec:
             name: bind9-configs
         - name: zones-volume
           configMap:
-            name: bind9-zones
+            name: bind9-zones-ttm842m5bt
         - name: rfc2136-key-volume
           secret:
             secretName: bind9-rfc2136-key

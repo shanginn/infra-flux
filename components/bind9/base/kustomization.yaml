@@ -6,6 +6,7 @@ resources:
   - namespace.yaml
   - deployment.yaml
   - service.yaml
+  - configs/zones
 
 configMapGenerator:
   - name: bind9-configs
@@ -14,30 +15,6 @@ configMapGenerator:
       - named.conf.acl=configs/named.conf.acl
       - named.conf.local=configs/named.conf.local
       - named.conf.options=configs/named.conf.options
-  - name: bind9-zones
-    files:
-      - aufstaff.ru=configs/zones/aufstaff.ru
-      - dorogoidnevnik.rf=configs/zones/dorogoidnevnik.rf
-      - flowerswork.ru=configs/zones/flowerswork.ru
-      - flowerworks.ru=configs/zones/flowerworks.ru
-      - generach.rf=configs/zones/generach.rf
-      - generach.ru=configs/zones/generach.ru
-      - itaisolutions.ru=configs/zones/itaisolutions.ru
-      - minijurnal.rf=configs/zones/minijurnal.rf
-      - mystaro.ru=configs/zones/mystaro.ru
-      - primerochka.rf=configs/zones/primerochka.rf
-      - raspechat.rf=configs/zones/raspechat.rf
-      - restavrach.rf=configs/zones/restavrach.rf
-      - shanghaiauto.ru=configs/zones/shanghaiauto.ru
-      - shanginn.io=configs/zones/shanginn.io
-      - shanginn.ru=configs/zones/shanginn.ru
-      - sistent.rf=configs/zones/sistent.rf
-      - sistent.ru=configs/zones/sistent.ru
-      - sputi.ru=configs/zones/sputi.ru
-      - udaleniefona.rf=configs/zones/udaleniefona.rf
-      - udalitfon.rf=configs/zones/udalitfon.rf
-      - vibesites.rf=configs/zones/vibesites.rf
-      - vibesites.ru=configs/zones/vibesites.ru
 
 generatorOptions:
   labels:

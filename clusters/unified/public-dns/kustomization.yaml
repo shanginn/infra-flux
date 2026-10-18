@@ -8,8 +8,11 @@ resources:
   - daemonset.yaml
   - network-policy.yaml
 configMapGenerator:
-  - name: public-dns-config
+  # Pin the deployed name: CoreDNS reloads this volume without a pod restart.
+  - name: public-dns-config-8kb7hccgc2
     files: [Corefile, settings.json, controller.py]
+    options:
+      disableNameSuffixHash: true
   - name: public-dns-zone
     files: [state.json]
     options:

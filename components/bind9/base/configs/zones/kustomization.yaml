@@ -1,0 +1,37 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+configMapGenerator:
+  # Keep the deployed name so publishing zone data does not restart BIND.
+  - name: bind9-zones-ttm842m5bt
+    options:
+      disableNameSuffixHash: true
+    files:
+      - aufstaff.ru=aufstaff.ru
+      - dorogoidnevnik.rf=dorogoidnevnik.rf
+      - flowerswork.ru=flowerswork.ru
+      - flowerworks.ru=flowerworks.ru
+      - generach.rf=generach.rf
+      - generach.ru=generach.ru
+      - itaisolutions.ru=itaisolutions.ru
+      - minijurnal.rf=minijurnal.rf
+      - mystaro.ru=mystaro.ru
+      - primerochka.rf=primerochka.rf
+      - raspechat.rf=raspechat.rf
+      - restavrach.rf=restavrach.rf
+      - shanghaiauto.ru=shanghaiauto.ru
+      - shanginn.io=shanginn.io
+      - shanginn.ru=shanginn.ru
+      - sistent.rf=sistent.rf
+      - sistent.ru=sistent.ru
+      - sputi.ru=sputi.ru
+      - udaleniefona.rf=udaleniefona.rf
+      - udalitfon.rf=udalitfon.rf
+      - vibesites.rf=vibesites.rf
+      - vibesites.ru=vibesites.ru
+
+generatorOptions:
+  labels:
+    app: bind9
+    app.kubernetes.io/instance: bind9
+    app.kubernetes.io/name: bind9
+    app.kubernetes.io/part-of: bind9

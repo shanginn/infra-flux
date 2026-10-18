@@ -7,7 +7,12 @@ resources:
   - workloads.yaml
   - network-policy.yaml
   - pdb.yaml
+  - legacy-bridge
 configMapGenerator:
   - name: powerdns-config
     namespace: dns-powerdns
     files: [pdns.conf, reader.conf, api.conf, runtime.py]
+  # Keep the reader ConfigMap and its hash stable when API access changes.
+  - name: powerdns-api-config
+    namespace: dns-powerdns
+    files: [pdns.conf, api.conf=api-access.conf, runtime.py]

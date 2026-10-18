@@ -133,6 +133,14 @@ Recovery bundle: `/etc/infra-flux/powerdns-runtime.json`, root, `0600`, на
 по одному pod; PDB сохраняет одну реплику при добровольном disruption.
 PDB не предотвращает потерю ноды или принудительное удаление pod.
 
+Временный [VPN-мост для старых клиентов](legacy-bridge/README.md) включён
+в конфигурацию. Перед reconciliation нужен отдельный private ConfigMap
+`flux-system/unified-legacy-dns`. API использует отдельный generated ConfigMap
+`powerdns-api-config`, а reader сохраняет исходный `powerdns-config`. Изменение
+разрешённых API-адресов сопровождается новым `POWERDNS_API_ACCESS_REVISION`:
+Flux подставляет переменные после вычисления hash ConfigMap, поэтому одной
+подстановки недостаточно для перезапуска процесса с новой конфигурацией.
+
 ## Наблюдение и ограничения
 
 Все packet/query/negative/zone/metadata/key caches отключены. Новый объект

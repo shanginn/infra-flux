@@ -189,6 +189,9 @@ spec:
       app.kubernetes.io/component: api
   template:
     metadata:
+      annotations:
+        # Flux substitutes after ConfigMap hashing; changed access must restart API.
+        infra.shanginn.io/api-access-revision: "${POWERDNS_API_ACCESS_REVISION}"
       labels:
         app.kubernetes.io/name: powerdns
         app.kubernetes.io/component: api
@@ -324,7 +327,7 @@ spec:
       volumes:
       - name: config
         configMap:
-          name: powerdns-config
+          name: powerdns-api-config
       - name: credentials
         secret:
           secretName: powerdns-api-runtime

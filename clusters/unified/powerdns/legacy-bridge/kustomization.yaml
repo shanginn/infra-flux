@@ -1,6 +1,6 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
-# Optional migration component: deliberately absent from the parent resources.
+# Temporary migration component; retire after all legacy clients move.
 resources:
   - services.yaml
   - network-policy.yaml

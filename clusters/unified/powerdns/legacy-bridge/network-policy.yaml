@@ -34,9 +34,11 @@ spec:
   policyTypes: [Ingress]
   ingress:
     # Cluster traffic policy uses MASQUERADE. Supply the source observed at the
-    # API Pod from each VPS, not an assumed Node InternalIP or an entire CIDR.
+    # destination Pod for both local and remote endpoints on each VPS.
     - from:
-        - ipBlock: {cidr: "${MSK_API_SOURCE_CIDR}"}
-        - ipBlock: {cidr: "${FIN_API_SOURCE_CIDR}"}
+        - ipBlock: {cidr: "${MSK_API_LOCAL_SOURCE_CIDR}"}
+        - ipBlock: {cidr: "${MSK_API_REMOTE_SOURCE_CIDR}"}
+        - ipBlock: {cidr: "${FIN_API_LOCAL_SOURCE_CIDR}"}
+        - ipBlock: {cidr: "${FIN_API_REMOTE_SOURCE_CIDR}"}
       ports:
         - {port: 8081, protocol: TCP}

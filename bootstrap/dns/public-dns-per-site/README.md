@@ -1,8 +1,8 @@
-# Optional per-site public DNS configuration
+# Per-site public DNS configuration
 
-This inactive component prepares the existing public DNS DaemonSet for separately
-reviewed changes on each VPS. Add it only through its existing Flux owner after
-reviewing the rendered change. No parent currently references it.
+The unified public DNS base includes this component for separately reviewed
+changes on each VPS. Review the exact render and server dry run through its
+existing Flux owner before applying a change.
 
 The first render adds `msk.Corefile` and `fin.Corefile`, both byte-identical to the
 current shared Corefile. CoreDNS receives its node name through the downward API

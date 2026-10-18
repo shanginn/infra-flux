@@ -9,6 +9,20 @@
     - vars/overlay.yml
 
   pre_tasks:
+    - name: Inspect overlay ownership before any bootstrap mutation
+      ansible.builtin.stat:
+        path: "{{ overlay_marker }}"
+        follow: false
+      register: overlay_marker_stat
+
+    - name: Refuse bootstrap over an existing overlay installation
+      ansible.builtin.assert:
+        that:
+          - not overlay_marker_stat.stat.exists
+        fail_msg: >-
+          overlay.yml is initial bootstrap only. Use bounded overlay maintenance
+          for an existing installation; do not remove its ownership marker to rerun bootstrap.
+
     - name: Validate the supported platform and required private settings
       ansible.builtin.assert:
         that:
@@ -20,10 +34,27 @@
           - overlay_ns_host_address is defined
           - overlay_ns_service_address is defined
           - overlay_tailnet_prefix is defined
+          - headscale_policy is defined
           - overlay_acme_email | default('') == '' or overlay_acme_email is match('^[A-Za-z0-9_.+%-]+@[A-Za-z0-9.-]+$')
           - headscale_hostname is match('^[a-z0-9.-]+$')
           - derp_hosts[inventory_hostname].hostname is match('^[a-z0-9.-]+$')
         fail_msg: Supply the required settings through a private extra-vars file.
+
+    - name: Require an explicit policy without Headscale implicit allow-all defaults
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/python3
+          - -c
+          - "{{ lookup('ansible.builtin.file', playbook_dir + '/files/overlay-settings.py') }}"
+        stdin: "{{ {'operation': 'policy', 'policy': headscale_policy} | to_json }}"
+      changed_when: false
+      check_mode: false
+      no_log: true
+
+    - name: Validate the initial coordinator transport before installing anything
+      ansible.builtin.include_tasks: tasks/overlay-routing.yml
+      vars:
+        overlay_allow_initial_relay_record: true
 
     - name: Validate isolated namespace addressing
       ansible.builtin.command:
@@ -66,11 +97,6 @@
       changed_when: false
       check_mode: false
       no_log: true
-
-    - name: Inspect overlay ownership marker
-      ansible.builtin.stat:
-        path: "{{ overlay_marker }}"
-      register: overlay_marker_stat
 
     - name: Read existing overlay ownership marker
       ansible.builtin.slurp:
@@ -352,14 +378,14 @@
         - derp.yaml
       notify: Restart active coordinator
 
-    - name: Permit authenticated overlay nodes to communicate
+    - name: Install the explicitly declared initial Headscale policy
       ansible.builtin.copy:
         dest: "{{ overlay_root }}/policy.json"
-        content: |
-          {"acls":[{"action":"accept","src":["*"],"dst":["*:*"]}]}
+        content: "{{ headscale_policy | to_nice_json }}\n"
         owner: root
         group: root
         mode: '0644'
+      no_log: true
       notify: Restart active coordinator
 
     - name: Install namespace setup script
@@ -430,6 +456,17 @@
         - ansible.builtin.set_fact:
             overlay_ingress_backends: "{{ (overlay_ingress_saved.content | b64decode | from_json).backends }}"
           no_log: true
+
+    - name: Persist the initial standby coordinator transport
+      ansible.builtin.copy:
+        dest: "{{ overlay_root }}/coordinator-relay.json"
+        content: "{{ overlay_coordinator_relay | to_nice_json }}\n"
+        owner: root
+        group: root
+        mode: '0600'
+        force: false
+      when: not overlay_is_coordinator
+      no_log: true
 
     - name: Install and validate the SNI and ACME router configuration
       ansible.builtin.template:

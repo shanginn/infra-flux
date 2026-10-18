@@ -27,6 +27,10 @@ overlay_root: /etc/infra-overlay
 overlay_bin: /usr/local/lib/infra-overlay
 overlay_acme_webroot: /var/lib/infra-overlay-acme
 # Supply namespace addresses and the VPN prefix through a private extra-vars file.
+# headscale_policy is mandatory, with an explicit acls or grants list. No implicit
+# allow-all default is provided. Running installations use bounded maintenance.
+# headscale_active_public_ipv4 is required for initial standby bootstrap. Later
+# ingress runs preserve coordinator-relay.json and reject a conflicting override.
 # overlay_acme_email is optional; an empty value creates an ACME account without email.
 overlay_haproxy_version: 3.0.11-1+deb13u3
 overlay_certbot_version: 4.0.0-2+deb13u1

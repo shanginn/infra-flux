@@ -1,0 +1,50 @@
+---
+# Read-only preflight shared by bootstrap and ingress maintenance. The installed
+# relay record is authoritative; a missing or conflicting one never falls back.
+- name: Inspect the persisted coordinator transport
+  ansible.builtin.stat:
+    path: "{{ overlay_root }}/coordinator-relay.json"
+    follow: false
+  register: overlay_relay_stat
+
+- name: Refuse an unsafe coordinator transport record
+  ansible.builtin.assert:
+    that:
+      - not overlay_relay_stat.stat.exists or (overlay_relay_stat.stat.isreg and not overlay_relay_stat.stat.islnk)
+      - not overlay_relay_stat.stat.exists or overlay_relay_stat.stat.uid == 0
+      - not overlay_relay_stat.stat.exists or overlay_relay_stat.stat.mode == '0600'
+    fail_msg: Coordinator transport record must be a root-owned regular file with mode 0600.
+
+- name: Read the persisted coordinator transport
+  ansible.builtin.slurp:
+    src: "{{ overlay_root }}/coordinator-relay.json"
+  register: overlay_relay_saved
+  when: overlay_relay_stat.stat.exists
+  no_log: true
+
+- name: Validate the coordinator transport identity and exclude forwarding loops
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/python3
+      - -c
+      - "{{ lookup('ansible.builtin.file', playbook_dir + '/files/overlay-settings.py') }}"
+    stdin: >-
+      {{ {'operation': 'routing', 'local_host': inventory_hostname,
+          'active_host': headscale_active_host, 'server_url': 'https://' + headscale_hostname,
+          'local_ipv4': ansible_facts.all_ipv4_addresses,
+          'namespace_addresses': [overlay_ns_host_address, overlay_ns_service_address],
+          'tailnet_prefix': overlay_tailnet_prefix,
+          'expected_upstream': headscale_active_public_ipv4 | default(none),
+          'allow_initial_record': overlay_allow_initial_relay_record | default(false),
+          'record': (overlay_relay_saved.content | b64decode | from_json)
+                    if overlay_relay_stat.stat.exists else none} | to_json }}
+  register: overlay_routing_checked
+  changed_when: false
+  check_mode: false
+  no_log: true
+
+- name: Use only the validated coordinator transport
+  ansible.builtin.set_fact:
+    overlay_coordinator_relay: "{{ (overlay_routing_checked.stdout | from_json).record }}"
+    overlay_headscale_upstream_ipv4: "{{ (overlay_routing_checked.stdout | from_json).upstream_ipv4 }}"
+  no_log: true

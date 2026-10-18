@@ -26,6 +26,11 @@
           - (ingress_overlay_marker.content | b64decode | from_json).coordinator == (inventory_hostname == headscale_active_host)
       no_log: true
 
+    - name: Preserve the checked coordinator transport before changing any routing
+      ansible.builtin.include_tasks: tasks/overlay-routing.yml
+      vars:
+        overlay_allow_initial_relay_record: false
+
     - name: Read the registered private node address
       ansible.builtin.command: tailscale ip -4
       register: ingress_vpn_address
@@ -84,7 +89,7 @@
               - (ingress_edge_previous.content | b64decode | from_json).backends == overlay_ingress_backends
           no_log: true
 
-    - name: Save the explicitly activated routing for future overlay reruns
+    - name: Save the explicitly activated routing for future bounded maintenance
       ansible.builtin.copy:
         dest: "{{ overlay_root }}/ingress-backends.json"
         content: "{{ {'owner': 'infra-flux/ansible/ingress-edge', 'backends': overlay_ingress_backends} | to_nice_json }}\n"

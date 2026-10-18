@@ -47,7 +47,11 @@ backend derp
 
 backend headscale
     mode tcp
+{% if inventory_hostname == headscale_active_host %}
     server coordinator {{ overlay_ns_service_address.split('/')[0] }}:{{ overlay_tls_port }} check
+{% else %}
+    server coordinator {{ overlay_headscale_upstream_ipv4 }}:443 check
+{% endif %}
 
 backend reject_tls
     mode tcp

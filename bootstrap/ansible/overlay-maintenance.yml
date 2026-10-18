@@ -1,0 +1,96 @@
+---
+- name: Apply or confirm one bounded overlay change with independent timed rollback
+  hosts: unified
+  become: true
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - name: Require an explicit action and exactly one destination
+      ansible.builtin.assert:
+        that:
+          - not ansible_check_mode
+          - ansible_play_hosts_all | length == 1
+          - inventory_hostname in ['msk', 'fin']
+          - overlay_maintenance_action | default('') in ['apply', 'confirm']
+          - overlay_maintenance_input_file is defined
+
+    - name: Validate the private controller input file
+      ansible.builtin.command:
+        argv:
+          - python3
+          - -c
+          - |
+            import os,pathlib,stat,sys
+            p=pathlib.Path(sys.argv[1]); s=p.lstat()
+            assert stat.S_ISREG(s.st_mode) and s.st_uid==os.geteuid() and not s.st_mode & 0o077
+          - '{{ overlay_maintenance_input_file }}'
+      delegate_to: localhost
+      become: false
+      changed_when: false
+
+    - name: Load the reviewed private operation
+      ansible.builtin.set_fact:
+        overlay_operation: "{{ lookup('ansible.builtin.file', overlay_maintenance_input_file) | from_json }}"
+      no_log: true
+
+    - name: Bind input to inventory identity
+      ansible.builtin.assert:
+        that:
+          - overlay_operation.node == inventory_hostname
+          - overlay_operation.cluster_uid is defined
+          - overlay_operation.ca_sha256 is defined
+      no_log: true
+
+    - name: Verify ownership and refuse helper replacement or unresolved operations
+      ansible.builtin.command:
+        argv:
+          - python3
+          - -c
+          - |
+            import hashlib,json,pathlib,stat,sys,types
+            p=json.load(sys.stdin); root=pathlib.Path('/etc/infra-flux')
+            assert not root.is_symlink() and root.stat().st_uid==0 and not root.stat().st_mode & 0o022
+            m=types.ModuleType('reviewed_maintenance')
+            exec(compile(p['helper'],'<reviewed-maintenance>','exec'),m.__dict__)
+            m.identity(p['operation'])
+            operation_dir=root/'overlay-maintenance'
+            unresolved=False
+            if operation_dir.exists():
+              assert not operation_dir.is_symlink() and operation_dir.stat().st_uid==0 and not operation_dir.stat().st_mode & 0o077
+              for path in operation_dir.glob('*.json'):
+                record=m.load(path.stem)
+                unresolved |= record['phase'] not in ('confirmed','rolled-back')
+            for name,source in [('overlay-maintenance.py',p['helper']),('overlay-settings.py',p['settings'])]:
+              target=root/name; assert not target.is_symlink()
+              digest=hashlib.sha256(source.encode()).hexdigest()
+              assert p['operation'].get('helper_sha256' if name=='overlay-maintenance.py' else 'settings_sha256',digest)==digest
+              if target.exists():
+                current=hashlib.sha256(m.trusted(target,True)).hexdigest()
+                assert current==digest or (not unresolved and current==p['previous_hashes'].get(name))
+              else:
+                assert not unresolved
+            assert not unresolved or p['action']=='confirm'
+        stdin: "{{ {'operation': overlay_operation, 'action': overlay_maintenance_action, 'helper': lookup('ansible.builtin.file', playbook_dir ~ '/files/overlay-maintenance.py', rstrip=False), 'settings': lookup('ansible.builtin.file', playbook_dir ~ '/files/overlay-settings.py', rstrip=False), 'previous_hashes': overlay_maintenance_previous_hashes | default({})} | to_json }}"
+      no_log: true
+      changed_when: false
+
+    - name: Install the reviewed bounded helpers
+      ansible.builtin.copy:
+        src: 'files/{{ item }}'
+        dest: '/etc/infra-flux/{{ item }}'
+        owner: root
+        group: root
+        mode: '0700'
+      loop: [overlay-settings.py, overlay-maintenance.py]
+
+    - name: Execute only the selected operation
+      ansible.builtin.command:
+        argv: [python3, /etc/infra-flux/overlay-maintenance.py, '{{ overlay_maintenance_action }}']
+        stdin: '{{ overlay_operation | to_json }}'
+      no_log: true
+      register: overlay_maintenance_result
+      changed_when: true
+
+    - name: Report the operation identity without private configuration
+      ansible.builtin.debug:
+        msg: '{{ overlay_maintenance_result.stdout | from_json }}'

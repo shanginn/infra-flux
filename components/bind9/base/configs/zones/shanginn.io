@@ -1,6 +1,6 @@
 $TTL 24H
 @     IN  SOA @       hostmaster.shanginn.io. (
-  2026101802       ; serial
+  2026101803       ; serial
   3H      ; refresh
   1H      ; retry
   1W      ; expire
@@ -9,6 +9,7 @@ $TTL 24H
 @          IN  NS          ns1.shanginn.io.
 @          IN  NS          ns2.shanginn.io.
 @          IN  NS          ns3.shanginn.io.
+@          IN  NS          ns4.shanginn.io.
 
 @          IN  A           84.247.177.201
 ns1        IN  A           84.247.177.201

@@ -7,6 +7,7 @@ Guard and result JSON belong outside Git. The remote host needs only Python 3.
 from __future__ import annotations
 
 import argparse
+import base64
 import datetime
 import hashlib
 import json
@@ -248,6 +249,19 @@ def private_json(path):
         return parse_json(stream.read(256 * 1024 + 1))
 
 
+def remote_command(source, profile, execute):
+    require(profile in ('kubectl', 'minikube'), 'Unsupported remote profile')
+    # SSH invokes the account's login shell, which may be fish. POSIX shlex.quote
+    # does not preserve arbitrary multiline Python across all login shells.
+    # Only a fixed, single-line bootstrap and the base64 alphabet reach that shell.
+    encoded = base64.b64encode(source.encode()).decode('ascii')
+    command = "python3 -c 'import base64;exec(base64.b64decode(\"" + encoded + "\"))'"
+    command += ' --remote --profile ' + profile
+    if execute:
+        command += ' --execute'
+    return command
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--via', help='Existing SSH alias; no host inventory is stored here')
@@ -281,9 +295,7 @@ def main():
         record = {'state': 'dispatching', 'execute': args.execute, 'at': datetime.datetime.now(datetime.timezone.utc).isoformat(),
                   'guard_sha256': object_digest(guard), 'profile': args.profile, 'via': args.via}
         stream.write(json.dumps(record) + '\n'); stream.flush(); os.fsync(stream.fileno())
-        command = 'python3 -c ' + shlex.quote(Path(__file__).read_text()) + ' --remote --profile ' + args.profile
-        if args.execute:
-            command += ' --execute'
+        command = remote_command(Path(__file__).read_text(), args.profile, args.execute)
         try:
             r = subprocess.run(['ssh', '-T', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=15', args.via, command],
                                input=json.dumps(guard), capture_output=True, text=True, timeout=600)

@@ -2,6 +2,9 @@ import copy
 import importlib.util
 import json
 from pathlib import Path
+import shlex
+import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -113,6 +116,27 @@ class GuardTests(unittest.TestCase):
 
 
 class OperationTests(unittest.TestCase):
+    def test_remote_bootstrap_preserves_shell_sensitive_source_and_arguments(self):
+        value = 'single\' double" backslash\\ dollar$(false) backtick`false`\nUnicode: имя'
+        source = 'import json,sys\nprint(json.dumps({' + repr('value') + ':' + repr(value) + ',"args":sys.argv[1:]}))\n'
+        for profile, execute in [('kubectl', False), ('minikube', True)]:
+            with self.subTest(profile=profile, execute=execute):
+                command = m.remote_command(source, profile, execute)
+                self.assertNotIn('\n', command)
+                self.assertNotIn('$(false)', command)
+                self.assertNotIn('`false`', command)
+                self.assertNotIn('\\', command)
+                tokens = shlex.split(command)
+                self.assertEqual(tokens[:2], ['python3', '-c'])
+                expected = ['--remote', '--profile', profile] + (['--execute'] if execute else [])
+                self.assertEqual(tokens[3:], expected)
+                result = subprocess.run([sys.executable] + tokens[1:], capture_output=True, text=True, check=True)
+                self.assertEqual(json.loads(result.stdout), {'value': value, 'args': expected})
+
+    def test_remote_bootstrap_refuses_shell_in_profile(self):
+        with self.assertRaisesRegex(RuntimeError, 'profile'):
+            m.remote_command('pass', 'kubectl; false', False)
+
     def test_check_only_never_sends_signal(self):
         remote = FakeRemote(guard())
         self.assertEqual(remote.run(False)['state'], 'validated')

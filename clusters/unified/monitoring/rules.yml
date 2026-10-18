@@ -1,4 +1,40 @@
 groups:
+  - name: bind-authority
+    rules:
+      - alert: PublicAuthorityDNSProbeFailed
+        expr: probe_success{job=~"public-dns-(msk|fin)-(udp|tcp)"} == 0
+        for: 2m
+        labels: {severity: critical}
+        annotations: {summary: 'Authoritative DNS {{ $labels.protocol }} on {{ $labels.dns_site }} fails from {{ $labels.probe_node }}'}
+      - alert: PublicAuthorityDNSProbeCoverageUnexpected
+        # Two public endpoints, both protocols, from each of the two VPS.
+        # Duplicate scrape targets during a rollout do not add a vantage point.
+        expr: (count(count by (dns_site, protocol, probe_node) (up{job=~"public-dns-(msk|fin)-(udp|tcp)"} == 1)) or vector(0)) != 8
+        for: 3m
+        labels: {severity: critical}
+        annotations: {summary: Expected eight reachable authoritative DNS probe targets across both VPS}
+      - alert: BindAuthorityReplicaUnavailable
+        expr: (count(up{job="bind-authority"} == 1) or vector(0)) < 2
+        for: 3m
+        labels: {severity: critical}
+        annotations: {summary: Fewer than two BIND authority metrics endpoints are reachable}
+      - alert: BindAuthorityStatisticsUnavailable
+        expr: bind_up{job="bind-authority"} == 0
+        for: 2m
+        labels: {severity: critical}
+        annotations: {summary: 'BIND statistics cannot be collected on {{ $labels.node }}'}
+      - alert: BindAuthoritySerialDivergence
+        expr: max by (view, zone_name) (bind_zone_serial{job="bind-authority"}) != min by (view, zone_name) (bind_zone_serial{job="bind-authority"})
+        for: 3m
+        labels: {severity: warning}
+        annotations: {summary: 'BIND authorities disagree on the SOA serial of {{ $labels.zone_name }} in view {{ $labels.view }}'}
+      - alert: BindAuthorityZoneMetricsUnexpected
+        # Twenty static zones plus two dynamic secondaries, once per view/node.
+        # A reachable exporter that emits no zone metrics must count as zero.
+        expr: (count by (node) (count by (node, view, zone_name) (bind_zone_serial{job="bind-authority"})) or on (node) (max by (node) (up{job="bind-authority"}) * 0)) != 22
+        for: 3m
+        labels: {severity: warning}
+        annotations: {summary: 'BIND on {{ $labels.node }} does not expose the expected 22 zone serial metrics'}
   - name: public-dns
     rules:
       - alert: PublicDNSAllIngressTargetsDown

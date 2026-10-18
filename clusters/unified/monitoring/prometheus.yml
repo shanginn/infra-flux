@@ -171,8 +171,19 @@ scrape_configs:
       - {source_labels: [__meta_kubernetes_pod_node_name], target_label: node}
     metric_relabel_configs:
       - source_labels: [__name__]
-        regex: 'infra_dns_.*|coredns_dns_requests_total|coredns_dns_responses_total|coredns_dns_request_duration_seconds_.*|coredns_panics_total|process_.*'
+        regex: 'infra_dns_.*|coredns_dns_requests_total|coredns_dns_responses_total|coredns_dns_request_duration_seconds_.*|coredns_panics_total|coredns_reload_.*|coredns_proxy_.*|process_.*'
         action: keep
+  - job_name: bind-authority
+    target_limit: 2
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces: {names: [dns-authority]}
+    relabel_configs:
+      - {source_labels: [__meta_kubernetes_pod_label_app], regex: bind-authority, action: keep}
+      - {source_labels: [__meta_kubernetes_pod_container_port_name], regex: bind-metrics, action: keep}
+      - {source_labels: [__meta_kubernetes_pod_node_name], target_label: node}
+    metric_relabel_configs:
+      - {source_labels: [__name__], regex: 'bind_.*|process_.*|go_goroutines', action: keep}
   - job_name: garage
     target_limit: 3
     kubernetes_sd_configs:
@@ -260,5 +271,61 @@ scrape_configs:
       - {source_labels: [__meta_kubernetes_pod_label_app], regex: blackbox-exporter, action: keep}
       - {source_labels: [__meta_kubernetes_pod_container_port_name], regex: metrics, action: keep}
       - {target_label: __param_target, replacement: 'https://derp-fin.shanginn.io/derp/probe'}
+      - {source_labels: [__meta_kubernetes_pod_node_name], target_label: probe_node}
+      - {source_labels: [__param_target], target_label: instance}
+  - job_name: public-dns-msk-udp
+    metrics_path: /probe
+    params: {module: [authoritative_dns_udp]}
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces: {names: [monitoring]}
+    relabel_configs:
+      - {source_labels: [__meta_kubernetes_pod_label_app], regex: blackbox-exporter, action: keep}
+      - {source_labels: [__meta_kubernetes_pod_container_port_name], regex: metrics, action: keep}
+      - {target_label: __param_target, replacement: '157.228.139.163:53'}
+      - {target_label: dns_site, replacement: msk}
+      - {target_label: protocol, replacement: udp}
+      - {source_labels: [__meta_kubernetes_pod_node_name], target_label: probe_node}
+      - {source_labels: [__param_target], target_label: instance}
+  - job_name: public-dns-msk-tcp
+    metrics_path: /probe
+    params: {module: [authoritative_dns_tcp]}
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces: {names: [monitoring]}
+    relabel_configs:
+      - {source_labels: [__meta_kubernetes_pod_label_app], regex: blackbox-exporter, action: keep}
+      - {source_labels: [__meta_kubernetes_pod_container_port_name], regex: metrics, action: keep}
+      - {target_label: __param_target, replacement: '157.228.139.163:53'}
+      - {target_label: dns_site, replacement: msk}
+      - {target_label: protocol, replacement: tcp}
+      - {source_labels: [__meta_kubernetes_pod_node_name], target_label: probe_node}
+      - {source_labels: [__param_target], target_label: instance}
+  - job_name: public-dns-fin-udp
+    metrics_path: /probe
+    params: {module: [authoritative_dns_udp]}
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces: {names: [monitoring]}
+    relabel_configs:
+      - {source_labels: [__meta_kubernetes_pod_label_app], regex: blackbox-exporter, action: keep}
+      - {source_labels: [__meta_kubernetes_pod_container_port_name], regex: metrics, action: keep}
+      - {target_label: __param_target, replacement: '89.35.119.225:53'}
+      - {target_label: dns_site, replacement: fin}
+      - {target_label: protocol, replacement: udp}
+      - {source_labels: [__meta_kubernetes_pod_node_name], target_label: probe_node}
+      - {source_labels: [__param_target], target_label: instance}
+  - job_name: public-dns-fin-tcp
+    metrics_path: /probe
+    params: {module: [authoritative_dns_tcp]}
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces: {names: [monitoring]}
+    relabel_configs:
+      - {source_labels: [__meta_kubernetes_pod_label_app], regex: blackbox-exporter, action: keep}
+      - {source_labels: [__meta_kubernetes_pod_container_port_name], regex: metrics, action: keep}
+      - {target_label: __param_target, replacement: '89.35.119.225:53'}
+      - {target_label: dns_site, replacement: fin}
+      - {target_label: protocol, replacement: tcp}
       - {source_labels: [__meta_kubernetes_pod_node_name], target_label: probe_node}
       - {source_labels: [__param_target], target_label: instance}

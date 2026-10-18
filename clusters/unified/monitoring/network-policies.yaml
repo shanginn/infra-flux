@@ -78,6 +78,19 @@ spec:
   podSelector: {matchLabels: {app: blackbox-exporter}}
   policyTypes: [Egress]
   egress:
+    # hostPort traffic may be evaluated after destination NAT.
+    - to:
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: public-dns}}
+          podSelector: {matchLabels: {app: public-dns}}
+      ports:
+        - {port: 53, protocol: TCP}
+        - {port: 53, protocol: UDP}
+    - to:
+        - ipBlock: {cidr: 157.228.139.163/32}
+        - ipBlock: {cidr: 89.35.119.225/32}
+      ports:
+        - {port: 53, protocol: TCP}
+        - {port: 53, protocol: UDP}
     - ports:
         - {port: 443, protocol: TCP}
 
@@ -89,6 +102,10 @@ spec:
   podSelector: {matchLabels: {app: prometheus}}
   policyTypes: [Egress]
   egress:
+    - to:
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: dns-authority}}
+          podSelector: {matchLabels: {app: bind-authority}}
+      ports: [{port: 9119, protocol: TCP}]
     - to:
         - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: kube-system}}
           podSelector: {matchLabels: {k8s-app: kube-dns}}

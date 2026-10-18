@@ -7,4 +7,15 @@ apps.shanginn.io:53 {
     health :8080
     ready :8181
     prometheus :9153
+    reload 5s 1s
+}
+
+# Explicit parent preserves DS query routing for the locally served child zone.
+shanginn.io:53 .:53 {
+    errors
+    forward . 10.120.53.53:53 {
+        max_concurrent 256
+        health_check 5s no_rec domain shanginn.io.
+    }
+    prometheus :9153
 }

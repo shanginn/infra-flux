@@ -2,6 +2,275 @@ rule_files:
   - rules.yml
 evaluation_interval: 1m
 tests:
+  - name: public-dns-eight-target-coverage-deduplicates-rollouts-and-detects-down-or-removed-target
+    interval: 1m
+    input_series:
+      - series: 'up{job="public-dns-msk-udp",dns_site="msk",protocol="udp",probe_node="msk",instance="original"}'
+        values: '1+0x12'
+      - series: 'up{job="public-dns-msk-udp",dns_site="msk",protocol="udp",probe_node="fin",instance="original"}'
+        values: '1+0x12'
+      - series: 'up{job="public-dns-msk-tcp",dns_site="msk",protocol="tcp",probe_node="msk",instance="original"}'
+        values: '1+0x12'
+      - series: 'up{job="public-dns-msk-tcp",dns_site="msk",protocol="tcp",probe_node="fin",instance="original"}'
+        values: '1+0x12'
+      - series: 'up{job="public-dns-fin-udp",dns_site="fin",protocol="udp",probe_node="msk",instance="original"}'
+        values: '1+0x12'
+      - series: 'up{job="public-dns-fin-udp",dns_site="fin",protocol="udp",probe_node="fin",instance="original"}'
+        values: '1+0x12'
+      - series: 'up{job="public-dns-fin-tcp",dns_site="fin",protocol="tcp",probe_node="msk",instance="original"}'
+        values: '1+0x12'
+      - series: 'up{job="public-dns-fin-tcp",dns_site="fin",protocol="tcp",probe_node="fin",instance="original"}'
+        values: '1+0x3 0+0x3 stale'
+      - series: 'up{job="public-dns-msk-udp",dns_site="msk",protocol="udp",probe_node="msk",instance="rollout-duplicate"}'
+        values: '1+0x12'
+      - series: 'up{job="unrelated",dns_site="fin",protocol="tcp",probe_node="fin",instance="unrelated"}'
+        values: '1+0x12'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: PublicAuthorityDNSProbeCoverageUnexpected
+        exp_alerts: []
+      - eval_time: 6m
+        alertname: PublicAuthorityDNSProbeCoverageUnexpected
+        exp_alerts: []
+      - eval_time: 7m
+        alertname: PublicAuthorityDNSProbeCoverageUnexpected
+        exp_alerts:
+          - exp_labels: {severity: critical}
+            exp_annotations: {summary: Expected eight reachable authoritative DNS probe targets across both VPS}
+      - eval_time: 10m
+        alertname: PublicAuthorityDNSProbeCoverageUnexpected
+        exp_alerts:
+          - exp_labels: {severity: critical}
+            exp_annotations: {summary: Expected eight reachable authoritative DNS probe targets across both VPS}
+  - name: public-dns-total-probe-disappearance-still-alerts
+    interval: 1m
+    input_series: []
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: PublicAuthorityDNSProbeCoverageUnexpected
+        exp_alerts:
+          - exp_labels: {severity: critical}
+            exp_annotations: {summary: Expected eight reachable authoritative DNS probe targets across both VPS}
+  - name: bind-zone-coverage-detects-one-missing-zone-and-empty-exporter-without-counting-duplicates
+    interval: 1m
+    input_series:
+      - series: 'up{job="bind-authority",node="complete"}'
+        values: '1+0x5'
+      - series: 'up{job="bind-authority",node="partial"}'
+        values: '1+0x5'
+      - series: 'up{job="bind-authority",node="empty"}'
+        values: '1+0x5'
+      - series: 'bind_zone_serial{job="bind-authority",node="complete",view="public",zone_name="zone1.example",instance="original"}'
+        values: '100+0x5'
+      - series: 'bind_zone_serial{job="bind-authority",node="complete",view="public",zone_name="zone2.example",instance="original"}'
+        values: '100+0x5'
+      - series: 'bind_zone_serial{job="bind-authority",node="complete",view="public",zone_name="zone3.example",instance="original"}'
+        values: '100+0x5'
+      - series: 'bind_zone_serial{job="bind-authority",node="complete",view="public",zone_name="zone4.example",instance="original"}'
+        values: '100+0x5'
+      - series: 'bind_zone_serial{job="bind-authority",node="complete",view="public",zone_name="zone5.example",instance="original"}'
+        values: '100+0x5'
+      - series: 'bind_zone_serial{job="bind-authority",node="complete",view="public",zone_name="zone6.example",instance="original"}'
+        values: '100+0x5'
+      - series: 'bind_zone_serial{job="bind-authority",node="complete",view="public",zone_name="zone7.example",instance="original"}'
+        values: '100+0x5'
+      - series: 'bind_zone_serial{job="bind-authority",node="complete",view="public",zone_name="zone8.example",instance="original"}'
+        values: '100+0x5'
+      - series: 'bind_zone_serial{job="bind-authority",node="complete",view="public",zone_name="zone9.example",instance="original"}'
+        values: '100+0x5'
+      - series: 'bind_zone_serial{job="bind-authority",node="complete",view="public",zone_name="zone10.example",instance="original"}'
+        values: '100+0x5'
+      - series: 'bind_zone_serial{job="bind-authority",node="complete",view="public",zone_name="zone11.example",instance="original"}'
+        values: '100+0x5'
+      - series: 'bind_zone_serial{job="bind-authority",node="complete",view="public",zone_name="zone12.example",instance="original"}'
+        values: '100+0x5'
+      - series: 'bind_zone_serial{job="bind-authority",node="complete",view="public",zone_name="zone13.example",instance="original"}'
+        values: '100+0x5'
+      - series: 'bind_zone_serial{job="bind-authority",node="complete",view="public",zone_name="zone14.example",instance="original"}'
+        values: '100+0x5'
+      - series: 'bind_zone_serial{job="bind-authority",node="complete",view="public",zone_name="zone15.example",instance="original"}'
+        values: '100+0x5'
+      - series: 'bind_zone_serial{job="bind-authority",node="complete",view="public",zone_name="zone16.example",instance="original"}'
+        values: '100+0x5'
+      - series: 'bind_zone_serial{job="bind-authority",node="complete",view="public",zone_name="zone17.example",instance="original"}'
+        values: '100+0x5'
+      - series: 'bind_zone_serial{job="bind-authority",node="complete",view="public",zone_name="zone18.example",instance="original"}'
+        values: '100+0x5'
+      - series: 'bind_zone_serial{job="bind-authority",node="complete",view="public",zone_name="zone19.example",instance="original"}'
+        values: '100+0x5'
+      - series: 'bind_zone_serial{job="bind-authority",node="complete",view="public",zone_name="zone20.example",instance="original"}'
+        values: '100+0x5'
+      - series: 'bind_zone_serial{job="bind-authority",node="complete",view="public",zone_name="zone21.example",instance="original"}'
+        values: '100+0x5'
+      - series: 'bind_zone_serial{job="bind-authority",node="complete",view="public",zone_name="zone22.example",instance="original"}'
+        values: '100+0x5'
+      - series: 'bind_zone_serial{job="bind-authority",node="partial",view="public",zone_name="zone1.example",instance="original"}'
+        values: '100+0x5'
+      - series: 'bind_zone_serial{job="bind-authority",node="partial",view="public",zone_name="zone2.example",instance="original"}'
+        values: '100+0x5'
+      - series: 'bind_zone_serial{job="bind-authority",node="partial",view="public",zone_name="zone3.example",instance="original"}'
+        values: '100+0x5'
+      - series: 'bind_zone_serial{job="bind-authority",node="partial",view="public",zone_name="zone4.example",instance="original"}'
+        values: '100+0x5'
+      - series: 'bind_zone_serial{job="bind-authority",node="partial",view="public",zone_name="zone5.example",instance="original"}'
+        values: '100+0x5'
+      - series: 'bind_zone_serial{job="bind-authority",node="partial",view="public",zone_name="zone6.example",instance="original"}'
+        values: '100+0x5'
+      - series: 'bind_zone_serial{job="bind-authority",node="partial",view="public",zone_name="zone7.example",instance="original"}'
+        values: '100+0x5'
+      - series: 'bind_zone_serial{job="bind-authority",node="partial",view="public",zone_name="zone8.example",instance="original"}'
+        values: '100+0x5'
+      - series: 'bind_zone_serial{job="bind-authority",node="partial",view="public",zone_name="zone9.example",instance="original"}'
+        values: '100+0x5'
+      - series: 'bind_zone_serial{job="bind-authority",node="partial",view="public",zone_name="zone10.example",instance="original"}'
+        values: '100+0x5'
+      - series: 'bind_zone_serial{job="bind-authority",node="partial",view="public",zone_name="zone11.example",instance="original"}'
+        values: '100+0x5'
+      - series: 'bind_zone_serial{job="bind-authority",node="partial",view="public",zone_name="zone12.example",instance="original"}'
+        values: '100+0x5'
+      - series: 'bind_zone_serial{job="bind-authority",node="partial",view="public",zone_name="zone13.example",instance="original"}'
+        values: '100+0x5'
+      - series: 'bind_zone_serial{job="bind-authority",node="partial",view="public",zone_name="zone14.example",instance="original"}'
+        values: '100+0x5'
+      - series: 'bind_zone_serial{job="bind-authority",node="partial",view="public",zone_name="zone15.example",instance="original"}'
+        values: '100+0x5'
+      - series: 'bind_zone_serial{job="bind-authority",node="partial",view="public",zone_name="zone16.example",instance="original"}'
+        values: '100+0x5'
+      - series: 'bind_zone_serial{job="bind-authority",node="partial",view="public",zone_name="zone17.example",instance="original"}'
+        values: '100+0x5'
+      - series: 'bind_zone_serial{job="bind-authority",node="partial",view="public",zone_name="zone18.example",instance="original"}'
+        values: '100+0x5'
+      - series: 'bind_zone_serial{job="bind-authority",node="partial",view="public",zone_name="zone19.example",instance="original"}'
+        values: '100+0x5'
+      - series: 'bind_zone_serial{job="bind-authority",node="partial",view="public",zone_name="zone20.example",instance="original"}'
+        values: '100+0x5'
+      - series: 'bind_zone_serial{job="bind-authority",node="partial",view="public",zone_name="zone21.example",instance="original"}'
+        values: '100+0x5'
+      - series: 'bind_zone_serial{job="bind-authority",node="complete",view="public",zone_name="zone1.example",instance="duplicate"}'
+        values: '100+0x5'
+      - series: 'bind_zone_serial{job="unrelated",node="partial",view="public",zone_name="zone22.example",instance="unrelated"}'
+        values: '100+0x5'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: BindAuthorityZoneMetricsUnexpected
+        exp_alerts: []
+      - eval_time: 3m
+        alertname: BindAuthorityZoneMetricsUnexpected
+        exp_alerts:
+          - exp_labels: {node: partial, severity: warning}
+            exp_annotations: {summary: BIND on partial does not expose the expected 22 zone serial metrics}
+          - exp_labels: {node: empty, severity: warning}
+            exp_annotations: {summary: BIND on empty does not expose the expected 22 zone serial metrics}
+  - name: bind-serials-are-compared-within-each-zone-and-view
+    interval: 1m
+    input_series:
+      - series: 'bind_zone_serial{job="bind-authority",node="msk",view="public",zone_name="one.example"}'
+        values: '100+0x5'
+      - series: 'bind_zone_serial{job="bind-authority",node="fin",view="public",zone_name="one.example"}'
+        values: '100+0x5'
+      - series: 'bind_zone_serial{job="bind-authority",node="msk",view="public",zone_name="two.example"}'
+        values: '900+0x5'
+      - series: 'bind_zone_serial{job="bind-authority",node="fin",view="public",zone_name="two.example"}'
+        values: '900+0x5'
+      - series: 'bind_zone_serial{job="bind-authority",node="msk",view="private",zone_name="one.example"}'
+        values: '800+0x5'
+      - series: 'bind_zone_serial{job="bind-authority",node="fin",view="private",zone_name="one.example"}'
+        values: '800+0x5'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: BindAuthoritySerialDivergence
+        exp_alerts: []
+  - name: bind-same-zone-divergence-waits-for-propagation-and-clears-after-convergence
+    interval: 1m
+    input_series:
+      - series: 'bind_zone_serial{job="bind-authority",node="msk",view="public",zone_name="one.example"}'
+        values: '101+0x6'
+      - series: 'bind_zone_serial{job="bind-authority",node="fin",view="public",zone_name="one.example"}'
+        values: '100+0x4 101+0x1'
+      - series: 'bind_zone_serial{job="bind-authority",node="msk",view="public",zone_name="two.example"}'
+        values: '900+0x6'
+      - series: 'bind_zone_serial{job="bind-authority",node="fin",view="public",zone_name="two.example"}'
+        values: '900+0x6'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: BindAuthoritySerialDivergence
+        exp_alerts: []
+      - eval_time: 3m
+        alertname: BindAuthoritySerialDivergence
+        exp_alerts:
+          - exp_labels: {severity: warning, view: public, zone_name: one.example}
+            exp_annotations: {summary: 'BIND authorities disagree on the SOA serial of one.example in view public'}
+      - eval_time: 5m
+        alertname: BindAuthoritySerialDivergence
+        exp_alerts: []
+  - name: bind-missing-replica-is-not-mistaken-for-healthy-serial-agreement
+    interval: 1m
+    input_series:
+      - series: 'up{job="bind-authority",node="msk"}'
+        values: '1+0x5'
+      - series: 'bind_zone_serial{job="bind-authority",node="msk",view="public",zone_name="one.example"}'
+        values: '100+0x5'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: BindAuthorityReplicaUnavailable
+        exp_alerts: []
+      - eval_time: 3m
+        alertname: BindAuthorityReplicaUnavailable
+        exp_alerts:
+          - exp_labels: {severity: critical}
+            exp_annotations: {summary: Fewer than two BIND authority metrics endpoints are reachable}
+      - eval_time: 5m
+        alertname: BindAuthoritySerialDivergence
+        exp_alerts: []
+  - name: bind-all-targets-missing-still-alerts
+    interval: 1m
+    input_series: []
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: BindAuthorityReplicaUnavailable
+        exp_alerts:
+          - exp_labels: {severity: critical}
+            exp_annotations: {summary: Fewer than two BIND authority metrics endpoints are reachable}
+  - name: bind-healthy-exporter-with-failed-statistics-alerts
+    interval: 1m
+    input_series:
+      - series: 'up{job="bind-authority",node="msk"}'
+        values: '1+0x5'
+      - series: 'up{job="bind-authority",node="fin"}'
+        values: '1+0x5'
+      - series: 'bind_up{job="bind-authority",node="msk"}'
+        values: '1+0x5'
+      - series: 'bind_up{job="bind-authority",node="fin"}'
+        values: '0+0x5'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: BindAuthorityReplicaUnavailable
+        exp_alerts: []
+      - eval_time: 2m
+        alertname: BindAuthorityStatisticsUnavailable
+        exp_alerts:
+          - exp_labels: {job: bind-authority, node: fin, severity: critical}
+            exp_annotations: {summary: BIND statistics cannot be collected on fin}
+  - name: public-dns-protocol-failure-is-scoped-to-site-and-vantage
+    interval: 1m
+    input_series:
+      - series: 'probe_success{job="public-dns-msk-udp",dns_site="msk",protocol="udp",probe_node="fin",instance="192.0.2.1:53"}'
+        values: '0+0x5'
+      - series: 'probe_success{job="public-dns-msk-tcp",dns_site="msk",protocol="tcp",probe_node="fin",instance="192.0.2.1:53"}'
+        values: '1+0x5'
+      - series: 'probe_success{job="public-dns-msk-udp",dns_site="msk",protocol="udp",probe_node="msk",instance="192.0.2.1:53"}'
+        values: '1+0x5'
+      - series: 'probe_success{job="unrelated",dns_site="fin",protocol="tcp",probe_node="msk",instance="192.0.2.2:53"}'
+        values: '0+0x5'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: PublicAuthorityDNSProbeFailed
+        exp_alerts: []
+      - eval_time: 2m
+        alertname: PublicAuthorityDNSProbeFailed
+        exp_alerts:
+          - exp_labels: {job: public-dns-msk-udp, dns_site: msk, protocol: udp, probe_node: fin, instance: '192.0.2.1:53', severity: critical}
+            exp_annotations: {summary: Authoritative DNS udp on msk fails from fin}
   - name: Detect repeated etcd restarts without warning on a single restart or unrelated container
     interval: 1m
     input_series:

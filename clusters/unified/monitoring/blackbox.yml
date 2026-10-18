@@ -10,3 +10,29 @@ modules:
       fail_if_not_ssl: true
       tls_config:
         insecure_skip_verify: false
+  authoritative_dns_udp:
+    prober: dns
+    timeout: 5s
+    dns:
+      preferred_ip_protocol: ip4
+      ip_protocol_fallback: false
+      transport_protocol: udp
+      query_name: shanginn.io
+      query_type: SOA
+      recursion_desired: false
+      valid_rcodes: [NOERROR]
+      validate_answer_rrs:
+        fail_if_none_matches_regexp: ['^shanginn\.io\.\s+\d+\s+IN\s+SOA\s+']
+  authoritative_dns_tcp:
+    prober: dns
+    timeout: 5s
+    dns:
+      preferred_ip_protocol: ip4
+      ip_protocol_fallback: false
+      transport_protocol: tcp
+      query_name: shanginn.io
+      query_type: SOA
+      recursion_desired: false
+      valid_rcodes: [NOERROR]
+      validate_answer_rrs:
+        fail_if_none_matches_regexp: ['^shanginn\.io\.\s+\d+\s+IN\s+SOA\s+']

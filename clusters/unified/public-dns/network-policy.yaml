@@ -17,6 +17,12 @@ spec:
         - {port: 9153, protocol: TCP}
         - {port: 9080, protocol: TCP}
   egress:
+    - to:
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: dns-authority}}
+          podSelector: {matchLabels: {app: bind-authority}}
+      ports:
+        - {port: 5353, protocol: UDP}
+        - {port: 5353, protocol: TCP}
     # API service DNAT may be enforced before or after NetworkPolicy evaluation.
     # Restrict to TLS API ports; no unrestricted DNS or web egress.
     - ports:

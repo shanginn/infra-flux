@@ -1,0 +1,58 @@
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata: {name: unified-dns-local}
+provisioner: kubernetes.io/no-provisioner
+volumeBindingMode: WaitForFirstConsumer
+reclaimPolicy: Retain
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata: {name: unified-bind-msk}
+spec:
+  capacity: {storage: 256Mi}
+  volumeMode: Filesystem
+  accessModes: [ReadWriteOnce]
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: unified-dns-local
+  local: {path: /var/lib/infra-dns/bind/data}
+  claimRef: {namespace: dns-authority, name: bind-msk}
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - {key: kubernetes.io/hostname, operator: In, values: [msk]}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata: {name: bind-msk}
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: unified-dns-local
+  volumeName: unified-bind-msk
+  resources: {requests: {storage: 256Mi}}
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata: {name: unified-bind-fin}
+spec:
+  capacity: {storage: 256Mi}
+  volumeMode: Filesystem
+  accessModes: [ReadWriteOnce]
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: unified-dns-local
+  local: {path: /var/lib/infra-dns/bind/data}
+  claimRef: {namespace: dns-authority, name: bind-fin}
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - {key: kubernetes.io/hostname, operator: In, values: [fin]}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata: {name: bind-fin}
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: unified-dns-local
+  volumeName: unified-bind-fin
+  resources: {requests: {storage: 256Mi}}

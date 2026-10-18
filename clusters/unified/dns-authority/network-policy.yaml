@@ -1,0 +1,30 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: bind-authority
+spec:
+  podSelector:
+    matchLabels: {app: bind-authority}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: public-dns}
+          podSelector:
+            matchLabels: {app: public-dns}
+      ports:
+        - {port: 5353, protocol: UDP}
+        - {port: 5353, protocol: TCP}
+    - from:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: monitoring}
+      ports:
+        - {port: 9119, protocol: TCP}
+  # Temporary legacy primary during overlap. These are public DNS records;
+  # inbound transfers and all updates remain disabled on this backend.
+  egress:
+    - to:
+        - ipBlock: {cidr: 185.221.212.224/32}
+      ports:
+        - {port: 53, protocol: TCP}
+        - {port: 53, protocol: UDP}

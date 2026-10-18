@@ -1,0 +1,16 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: dns-authority
+resources:
+  - namespace.yaml
+  - ../../../components/bind9/base/configs/zones
+  - storage.yaml
+  - workloads.yaml
+  - service.yaml
+  - network-policy.yaml
+  - monitoring-rbac.yaml
+configMapGenerator:
+  - name: bind-authority-config
+    options:
+      disableNameSuffixHash: true
+    files: [named.conf, named.conf.zones, zones.txt, readiness.sh, run.sh]

@@ -1,0 +1,70 @@
+---
+- name: Prepare bounded authoritative DNS caches on the two VPS nodes
+  hosts: msk:fin
+  become: true
+  gather_facts: true
+  serial: 1
+  any_errors_fatal: true
+  vars:
+    dns_volume_prepare_enabled: false
+    dns_volume_cluster_uid: ''
+    dns_volume_ca_sha256: ''
+  tasks:
+    - name: Require the intended two managed VPS nodes and explicit identities
+      ansible.builtin.assert:
+        that:
+          - dns_volume_prepare_enabled | bool
+          - not ansible_check_mode
+          - ansible_play_hosts_all | sort == ['fin', 'msk']
+          - inventory_hostname in ['fin', 'msk']
+          - ansible_facts.distribution == 'Debian'
+          - ansible_facts.distribution_major_version == '13'
+          - dns_volume_cluster_uid is match('^[0-9a-f-]{36}$')
+          - dns_volume_ca_sha256 is match('^[0-9a-f]{64}$')
+        fail_msg: Supply the live cluster UID and CA SHA256; this prepares only new 256 MiB DNS cache volumes.
+    - name: Check required existing OS utilities
+      ansible.builtin.command:
+        argv: [/usr/bin/which, fallocate, mkfs.ext4, e2fsck, findmnt, losetup, blkid, systemctl, kubectl]
+      changed_when: false
+    - name: Inspect an existing helper without following links
+      ansible.builtin.stat:
+        path: /etc/infra-flux/dns-volume.py
+        follow: false
+        checksum_algorithm: sha256
+      register: dns_volume_helper
+    - name: Refuse replacing an unowned or changed helper
+      ansible.builtin.assert:
+        that:
+          - >-
+            not dns_volume_helper.stat.exists or
+            (dns_volume_helper.stat.isreg | default(false) and
+             not dns_volume_helper.stat.islnk | default(false) and
+             dns_volume_helper.stat.uid == 0 and dns_volume_helper.stat.gid == 0 and
+             dns_volume_helper.stat.mode == '0700' and dns_volume_helper.stat.nlink == 1 and
+             dns_volume_helper.stat.checksum == lookup('file', 'files/dns-volume.py', rstrip=false) | hash('sha256'))
+        fail_msg: Existing helpers must be identical and owned; source upgrades require explicit maintenance review.
+    - name: Install the guarded DNS volume preparation helper
+      ansible.builtin.copy:
+        src: files/dns-volume.py
+        dest: /etc/infra-flux/dns-volume.py
+        owner: root
+        group: root
+        mode: '0700'
+    - name: Prepare and verify the owned bounded filesystem
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/python3
+          - /etc/infra-flux/dns-volume.py
+          - prepare
+          - --expected-cluster-uid
+          - '{{ dns_volume_cluster_uid }}'
+          - --expected-ca-sha256
+          - '{{ dns_volume_ca_sha256 }}'
+          - --expected-node
+          - '{{ inventory_hostname }}'
+      register: dns_volume_prepare
+      changed_when: (dns_volume_prepare.stdout | from_json).changed
+    - name: Read back ownership and hard capacity
+      ansible.builtin.command:
+        argv: [/usr/bin/python3, /etc/infra-flux/dns-volume.py, verify]
+      changed_when: false

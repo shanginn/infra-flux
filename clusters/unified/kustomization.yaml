@@ -5,6 +5,7 @@ resources:
   - flux-system
   - ingress
   - public-dns
+  - dns-authority
   - monitoring
   - garage
   - certificates

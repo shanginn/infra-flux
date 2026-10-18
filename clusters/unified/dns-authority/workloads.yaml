@@ -1,0 +1,225 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: bind-msk
+spec:
+  replicas: 1
+  serviceName: bind-authority-peers
+  # Rolling both independent one-pod StatefulSets would not honor the PDB.
+  # Reviewed updates are activated one VPS at a time after zone parity checks.
+  updateStrategy: {type: OnDelete}
+  minReadySeconds: 10
+  selector:
+    matchLabels: {app: bind-authority, site: msk}
+  template:
+    metadata:
+      labels: {app: bind-authority, site: msk}
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 30
+      nodeSelector: {kubernetes.io/hostname: msk}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 53
+        runAsGroup: 53
+        fsGroup: 53
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile: {type: RuntimeDefault}
+      initContainers:
+        - name: check-config
+          image: docker.io/internetsystemsconsortium/bind9:9.20@sha256:071465f88068854d0ceadd9b985fb1acae4071e80754e545cd811fde57541ad0
+          command: [/usr/sbin/named-checkconf, -z, /config/named.conf]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          resources:
+            requests: {cpu: 10m, memory: 32Mi}
+            limits: {cpu: 500m, memory: 128Mi}
+          volumeMounts:
+            - {name: config, mountPath: /config, readOnly: true}
+            - {name: zones, mountPath: /zones, readOnly: true}
+            - {name: transfer, mountPath: /run/transfer, readOnly: true}
+            - {name: data, mountPath: /var/lib/bind}
+            - {name: run, mountPath: /run/named}
+      containers:
+        - name: bind
+          image: docker.io/internetsystemsconsortium/bind9:9.20@sha256:071465f88068854d0ceadd9b985fb1acae4071e80754e545cd811fde57541ad0
+          command: [/bin/sh, /config/run.sh]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          ports:
+            - {name: dns-udp, containerPort: 5353, protocol: UDP}
+            - {name: dns-tcp, containerPort: 5353, protocol: TCP}
+          startupProbe:
+            exec: {command: [/bin/sh, /config/readiness.sh]}
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 120
+          readinessProbe:
+            exec: {command: [/bin/sh, /config/readiness.sh]}
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 2
+          livenessProbe:
+            tcpSocket: {port: dns-tcp}
+            periodSeconds: 15
+            timeoutSeconds: 2
+            failureThreshold: 4
+          resources:
+            requests: {cpu: 50m, memory: 64Mi}
+            limits: {cpu: 500m, memory: 256Mi}
+          volumeMounts:
+            - {name: config, mountPath: /config, readOnly: true}
+            - {name: zones, mountPath: /zones, readOnly: true}
+            - {name: transfer, mountPath: /run/transfer, readOnly: true}
+            - {name: data, mountPath: /var/lib/bind}
+            - {name: run, mountPath: /run/named}
+        - name: bind-exporter
+          image: docker.io/prometheuscommunity/bind-exporter:v0.8.0@sha256:f3d3d3c85e95e752a2af50c46cebeaeee22d94493d7d7c898e2ab9d232b366d7
+          args:
+            - --bind.stats-url=http://127.0.0.1:8053/
+            - --bind.stats-groups=server,view
+            - --bind.pid-file=
+            - --web.listen-address=:9119
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          ports:
+            - {name: bind-metrics, containerPort: 9119}
+          readinessProbe:
+            httpGet: {path: /metrics, port: bind-metrics}
+            periodSeconds: 15
+            timeoutSeconds: 5
+          resources:
+            requests: {cpu: 5m, memory: 16Mi}
+            limits: {cpu: 100m, memory: 64Mi}
+      volumes:
+        - name: config
+          configMap: {name: bind-authority-config}
+        - name: zones
+          configMap: {name: bind9-zones-ttm842m5bt}
+        - name: transfer
+          secret:
+            secretName: bind-transfer-runtime
+            defaultMode: 0440
+        - name: data
+          persistentVolumeClaim: {claimName: bind-msk}
+        - name: run
+          emptyDir: {medium: Memory, sizeLimit: 1Mi}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: bind-fin
+spec:
+  replicas: 1
+  serviceName: bind-authority-peers
+  # Rolling both independent one-pod StatefulSets would not honor the PDB.
+  # Reviewed updates are activated one VPS at a time after zone parity checks.
+  updateStrategy: {type: OnDelete}
+  minReadySeconds: 10
+  selector:
+    matchLabels: {app: bind-authority, site: fin}
+  template:
+    metadata:
+      labels: {app: bind-authority, site: fin}
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 30
+      nodeSelector: {kubernetes.io/hostname: fin}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 53
+        runAsGroup: 53
+        fsGroup: 53
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile: {type: RuntimeDefault}
+      initContainers:
+        - name: check-config
+          image: docker.io/internetsystemsconsortium/bind9:9.20@sha256:071465f88068854d0ceadd9b985fb1acae4071e80754e545cd811fde57541ad0
+          command: [/usr/sbin/named-checkconf, -z, /config/named.conf]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          resources:
+            requests: {cpu: 10m, memory: 32Mi}
+            limits: {cpu: 500m, memory: 128Mi}
+          volumeMounts:
+            - {name: config, mountPath: /config, readOnly: true}
+            - {name: zones, mountPath: /zones, readOnly: true}
+            - {name: transfer, mountPath: /run/transfer, readOnly: true}
+            - {name: data, mountPath: /var/lib/bind}
+            - {name: run, mountPath: /run/named}
+      containers:
+        - name: bind
+          image: docker.io/internetsystemsconsortium/bind9:9.20@sha256:071465f88068854d0ceadd9b985fb1acae4071e80754e545cd811fde57541ad0
+          command: [/bin/sh, /config/run.sh]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          ports:
+            - {name: dns-udp, containerPort: 5353, protocol: UDP}
+            - {name: dns-tcp, containerPort: 5353, protocol: TCP}
+          startupProbe:
+            exec: {command: [/bin/sh, /config/readiness.sh]}
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 120
+          readinessProbe:
+            exec: {command: [/bin/sh, /config/readiness.sh]}
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 2
+          livenessProbe:
+            tcpSocket: {port: dns-tcp}
+            periodSeconds: 15
+            timeoutSeconds: 2
+            failureThreshold: 4
+          resources:
+            requests: {cpu: 50m, memory: 64Mi}
+            limits: {cpu: 500m, memory: 256Mi}
+          volumeMounts:
+            - {name: config, mountPath: /config, readOnly: true}
+            - {name: zones, mountPath: /zones, readOnly: true}
+            - {name: transfer, mountPath: /run/transfer, readOnly: true}
+            - {name: data, mountPath: /var/lib/bind}
+            - {name: run, mountPath: /run/named}
+        - name: bind-exporter
+          image: docker.io/prometheuscommunity/bind-exporter:v0.8.0@sha256:f3d3d3c85e95e752a2af50c46cebeaeee22d94493d7d7c898e2ab9d232b366d7
+          args:
+            - --bind.stats-url=http://127.0.0.1:8053/
+            - --bind.stats-groups=server,view
+            - --bind.pid-file=
+            - --web.listen-address=:9119
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          ports:
+            - {name: bind-metrics, containerPort: 9119}
+          readinessProbe:
+            httpGet: {path: /metrics, port: bind-metrics}
+            periodSeconds: 15
+            timeoutSeconds: 5
+          resources:
+            requests: {cpu: 5m, memory: 16Mi}
+            limits: {cpu: 100m, memory: 64Mi}
+      volumes:
+        - name: config
+          configMap: {name: bind-authority-config}
+        - name: zones
+          configMap: {name: bind9-zones-ttm842m5bt}
+        - name: transfer
+          secret:
+            secretName: bind-transfer-runtime
+            defaultMode: 0440
+        - name: data
+          persistentVolumeClaim: {claimName: bind-fin}
+        - name: run
+          emptyDir: {medium: Memory, sizeLimit: 1Mi}

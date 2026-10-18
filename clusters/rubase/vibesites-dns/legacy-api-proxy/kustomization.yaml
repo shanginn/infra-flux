@@ -5,6 +5,7 @@ resources:
   - deployment.yaml
   - preview-service.yaml
   - network-policy.yaml
+  - pod-scrape.yaml
 configMapGenerator:
   - name: legacy-pdns-api-proxy-config
     files: [haproxy.cfg, Corefile]

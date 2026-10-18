@@ -52,8 +52,8 @@ class ProxyIsolationTests(unittest.TestCase):
         cls.by_kind = {obj['kind']: obj for obj in cls.objects}
 
     def test_preview_cannot_select_or_replace_old_services(self):
-        self.assertEqual(sorted(self.by_kind), ['ConfigMap', 'Deployment', 'NetworkPolicy', 'Service'])
-        self.assertEqual(len(self.objects), 4)
+        self.assertEqual(sorted(self.by_kind), ['ConfigMap', 'Deployment', 'NetworkPolicy', 'Service', 'VMPodScrape'])
+        self.assertEqual(len(self.objects), 5)
         for obj in self.objects:
             self.assertEqual(obj['metadata']['namespace'], 'vibesites-dns')
             self.assertTrue(obj['metadata']['name'].startswith('legacy-pdns-api-proxy'))
@@ -128,6 +128,15 @@ class ProxyIsolationTests(unittest.TestCase):
         for values in ({**good, ADDRESS_KEYS[0]: good[ADDRESS_KEYS[1]]}, {**good, REVISION_KEY: '0' * 64}, {**good, 'EXTRA': 'value'}):
             with self.assertRaises(ValueError):
                 validate_values(values)
+
+    def test_metrics_discovery_is_scoped_to_proxy_pods(self):
+        scrape = self.by_kind['VMPodScrape']['spec']
+        self.assertEqual(scrape['selector'], self.by_kind['Deployment']['spec']['selector'])
+        self.assertEqual(scrape['namespaceSelector'], {'matchNames': ['vibesites-dns']})
+        endpoints = scrape['podMetricsEndpoints']
+        self.assertEqual(len(endpoints), 2)
+        self.assertEqual({e['port'] for e in endpoints}, {'haproxy-metrics', 'dns-metrics'})
+        self.assertTrue(all(e['path'] == '/metrics' and e['interval'] == '20s' and e['scrapeTimeout'] == '5s' for e in endpoints))
 
 
 if __name__ == '__main__':

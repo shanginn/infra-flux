@@ -1,0 +1,19 @@
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMPodScrape
+metadata:
+  name: legacy-pdns-api-proxy
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: legacy-pdns-api-proxy
+  namespaceSelector:
+    matchNames: [vibesites-dns]
+  podMetricsEndpoints:
+    - port: haproxy-metrics
+      path: /metrics
+      interval: 20s
+      scrapeTimeout: 5s
+    - port: dns-metrics
+      path: /metrics
+      interval: 20s
+      scrapeTimeout: 5s

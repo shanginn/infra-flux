@@ -1,9 +1,14 @@
 # Temporary PowerDNS API proxy
 
 This optional directory creates a separate preview Service, two proxy Pods,
-a generated ConfigMap and a NetworkPolicy. It is not included by the parent DNS
+a generated ConfigMap, a NetworkPolicy and a VMPodScrape. It is not included by the parent DNS
 Kustomization. The Flux example is suspended. Rendering or enabling the preview
 does not change existing writer URLs, DNS Services or database writers.
+
+The standalone activation manifest is
+[`clusters/rubase/legacy-powerdns-api-proxy.yaml`](../../legacy-powerdns-api-proxy.yaml).
+Bootstrap only that object after the checks below; a legacy cluster need not have
+a reconciler watching its root directory.
 
 HAProxy checks both private API entries with the existing
 `powerdns-api/api-key` Secret. Client headers pass through unchanged: the proxy
@@ -23,8 +28,10 @@ switch. Never point that forwarding destination at the alias being switched or
 at the preview itself. The process readiness probe keeps DNS available when both
 API entries are down; `/ready` on port 8404 separately reports API availability.
 HAProxy and DNS metrics are on ports 8404 and 9153, restricted to the monitoring
-namespace. A monitoring collector must actually scrape them before claiming
-monitoring coverage. Both proxy replicas share the legacy host's failure domain.
+namespace. The VMPodScrape selects only these Pods and scrapes both ports every
+20 seconds. Verify discovery by the existing VMAgent, four healthy targets and
+stored samples before claiming monitoring coverage. Both proxy replicas share
+the legacy host's failure domain.
 
 ## Private substitutions
 

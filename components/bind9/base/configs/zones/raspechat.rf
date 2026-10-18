@@ -1,12 +1,14 @@
 $TTL 300
 @ IN SOA ns1.shanginn.io. hostmaster.shanginn.io. (
-  2026091202 ; serial
+  2026101801 ; serial
   1H ; refresh
   15M ; retry
   1W ; expire
   300 ) ; negative cache
 @ IN NS ns1.shanginn.io.
 @ IN NS ns2.shanginn.io.
+@ IN NS ns3.shanginn.io.
+@ IN NS ns4.shanginn.io.
 @ 300 IN MX 10 mx1.shanginn.io.
 @ IN A 185.221.212.224
 www IN A 185.221.212.224

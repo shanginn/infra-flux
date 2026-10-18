@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 from datetime import datetime, timezone
 import hashlib
+import importlib.util
 import ipaddress
 import json
 import os
@@ -193,7 +194,19 @@ def validate_sequences(sequences, tables):
             require(next_id < RESERVED_DOMAIN, 'Sequence reaches reserved health IDs')
 
 
+def sql_fence_module():
+    spec = importlib.util.spec_from_file_location('pdns_sql_fence', Path(__file__).with_name('powerdns-fence.py'))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def validate_fence(evidence, source, started, finished):
+    if isinstance(evidence, dict) and evidence.get('kind') == 'powerdns-sql-dml-fence':
+        sql_fence_module().validate_receipt(evidence, source)
+        require(timestamp(evidence['checked_at']) <= timestamp(started) <= timestamp(finished) <= timestamp(evidence['valid_until']),
+                'SQL fence observation does not cover capture')
+        return
     require(isinstance(evidence, dict) and set(evidence) == {
         'format', 'kind', 'source', 'fence_id', 'checked_at', 'valid_until', 'checks', 'evidence_sha256'}, 'Fence evidence fields differ')
     require(evidence['format'] == 1 and evidence['kind'] == 'powerdns-writer-fence', 'Fence evidence format differs')
@@ -234,7 +247,7 @@ def make_snapshot(source, tables, before, after, started, finished, transaction,
         require(fence is None, 'Fence evidence requires explicit final capture')
     payload = {'format': FORMAT, 'source': source, 'capture': {
         'started_at': started, 'finished_at': finished, 'transaction': transaction,
-        'final_for_cutover': final, 'fence_verification': 'external-attestation' if final else 'not-verified',
+        'final_for_cutover': final, 'fence_verification': ('sql-effective-privileges' if fence.get('kind') == 'powerdns-sql-dml-fence' else 'external-attestation') if final else 'not-verified',
         'fence': fence, 'sequences_stable': stable},
         'limits': {'max_rows': max_rows, 'max_bytes': max_bytes}, 'tables': tables,
         'destination_collisions': collisions,
@@ -304,7 +317,7 @@ def write_private_json(path, value):
         raise
 
 
-def export_snapshot(connection, expected_source, *, final=False, fence=None, max_rows=MAX_ROWS, max_bytes=MAX_BYTES):
+def _export_snapshot(connection, expected_source, *, final=False, fence=None, max_rows=MAX_ROWS, max_bytes=MAX_BYTES):
     """Use a fresh psycopg connection in autocommit mode; no SQL writes occur."""
     validate_identity(expected_source)
     validate_limits(max_rows, max_bytes)
@@ -317,6 +330,9 @@ def export_snapshot(connection, expected_source, *, final=False, fence=None, max
             cursor.execute("SET LOCAL lock_timeout='2s'")
             cursor.execute("SET LOCAL idle_in_transaction_session_timeout='60s'")
             cursor.execute("SET LOCAL search_path=pg_catalog")
+            # Lock before the first snapshot-producing SELECT. TRUNCATE/table
+            # replacement must not slip between snapshot acquisition and locks.
+            cursor.execute('LOCK TABLE ' + ','.join('public.' + table for table in TABLES) + ' IN ACCESS SHARE MODE')
             cursor.execute("SELECT system_identifier::text FROM pg_control_system()")
             system_identifier = cursor.fetchone()[0]
             cursor.execute("SELECT d.oid::bigint,current_database(),current_user,pg_is_in_recovery(),current_setting('transaction_read_only'),current_setting('transaction_isolation'),pg_current_snapshot()::text,current_setting('server_version_num')::int FROM pg_database d WHERE d.datname=current_database()")
@@ -325,9 +341,6 @@ def export_snapshot(connection, expected_source, *, final=False, fence=None, max
                       'database_oid': oid, 'database': database, 'user': user}
             require(source == expected_source and recovery is False, 'Connected source identity or primary status differs')
             transaction = {'snapshot': mvcc, 'server_version_num': version, 'read_only': readonly == 'on', 'isolation': isolation}
-            # AccessShare locks prevent table replacement until rollback; never lock rows.
-            for table in TABLES:
-                cursor.execute('SELECT 1 FROM public.' + table + ' LIMIT 0')
             cursor.execute("SELECT c.relname,c.relkind,c.relrowsecurity,c.relforcerowsecurity FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relkind IN ('r','p','v','m','f') ORDER BY 1")
             relations = cursor.fetchall()
             require({row[0] for row in relations} == set(TABLES) and all(row[1:] == ('r', False, False) for row in relations), 'Source table set or row visibility differs')
@@ -386,6 +399,24 @@ def export_snapshot(connection, expected_source, *, final=False, fence=None, max
         finally:
             cursor.execute('ROLLBACK')
     return snapshot
+
+
+
+def export_snapshot(connection, expected_source, *, final=False, fence=None, max_rows=MAX_ROWS, max_bytes=MAX_BYTES):
+    if not (final and isinstance(fence, dict) and fence.get('kind') == 'powerdns-sql-dml-fence'):
+        return _export_snapshot(connection, expected_source, final=final, fence=fence, max_rows=max_rows, max_bytes=max_bytes)
+    module = sql_fence_module()
+    module.validate_receipt(fence, expected_source)
+    module.acquire_lock(connection)
+    try:
+        before = module.assert_fenced(connection, expected_source, fence['writer_role'])
+        require(module.digest(before) == fence['after_sha256'], 'Live source fence differs from receipt')
+        result = _export_snapshot(connection, expected_source, final=final, fence=fence, max_rows=max_rows, max_bytes=max_bytes)
+        after = module.assert_fenced(connection, expected_source, fence['writer_role'])
+        require(after == before, 'Source fence changed during capture')
+        return result
+    finally:
+        module.release_lock(connection)
 
 
 def summary(snapshot):

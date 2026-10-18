@@ -233,7 +233,7 @@ class FakeCursor:
     def execute(self, statement, args=()):
         self.calls.append((statement, args))
         self.result = []
-        if statement.startswith(('BEGIN ', 'SET LOCAL ', 'ROLLBACK', 'SELECT 1 FROM ')): return
+        if statement.startswith(('BEGIN ', 'SET LOCAL ', 'ROLLBACK', 'LOCK TABLE ')): return
         if statement == 'SELECT system_identifier::text FROM pg_control_system()': self.result = [(SOURCE['system_identifier'],)]
         elif statement.startswith('SELECT d.oid'): self.result = [(SOURCE['database_oid'], 'powerdns', 'postgres', False, 'on', 'repeatable read', '10:12:11', 180004)]
         elif statement.startswith('SELECT c.relname'): self.result = [(t, 'r', False, False) for t in p.TABLES]
@@ -278,7 +278,16 @@ class ExportTransactionTests(unittest.TestCase):
         self.assertEqual(statements[0], 'BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
         self.assertEqual(statements[-1], 'ROLLBACK')
         self.assertEqual(sum(s.startswith('SELECT last_value') for s in statements), 12)
-        self.assertTrue(all(s.startswith(('SELECT ', 'SET LOCAL ', 'BEGIN ', 'ROLLBACK')) for s in statements))
+        self.assertTrue(all(s.startswith(('SELECT ', 'SET LOCAL ', 'BEGIN ', 'ROLLBACK', 'LOCK TABLE ')) for s in statements))
+
+    def test_all_relation_locks_precede_snapshot_acquisition(self):
+        conn, cursor = self.connection()
+        p.export_snapshot(conn, SOURCE)
+        statements = [s for s, _ in cursor.calls]
+        locks = [i for i,s in enumerate(statements) if s.startswith('LOCK TABLE ')]
+        self.assertEqual(len(locks),1)
+        self.assertLess(locks[0],next(i for i,s in enumerate(statements) if s.startswith('SELECT ')))
+        self.assertEqual(statements[locks[0]],'LOCK TABLE '+','.join('public.'+t for t in p.TABLES)+' IN ACCESS SHARE MODE')
 
     def test_cap_failure_rolls_back_without_fetching_table_rows(self):
         conn, cursor = self.connection(too_many=True)

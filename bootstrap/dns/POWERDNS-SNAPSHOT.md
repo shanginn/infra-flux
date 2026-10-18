@@ -106,9 +106,18 @@ and [sequence semantics](https://www.postgresql.org/docs/current/functions-seque
 ## Final capture requires independently verified fencing
 
 `--final` is reserved for a separately performed and reviewed writer cutover.
-The exporter cannot establish or independently verify a network fence. Its final
-status means **stable sequence observations plus a supplied external attestation**,
-not proof that every writer has stopped. No fence commands are included here.
+The exporter supports two distinct evidence formats. With a
+`powerdns-sql-dml-fence` receipt from [powerdns-fence.py](powerdns-fence.py), it
+checks actual effective privileges, identity, schema and ACLs before and after
+capture, while holding the shared cutover advisory lock. It records
+`fence_verification: sql-effective-privileges`. Ordinary application writes must
+be denied while reads remain available; TCP 8081 need not be closed. See the
+[SQL fence operating instructions](POWERDNS-FENCE.md) for its owner/admin limits.
+
+The older `powerdns-writer-fence` format below remains an **external attestation**.
+The exporter cannot independently verify that network fence and records
+`fence_verification: external-attestation`. Do not use its blocked-port assertion
+to describe a SQL privilege fence. The data-only importer accepts SQL receipts.
 
 Before making that attestation, verify that the old API on TCP 8081 is unreachable
 from its actual writer workloads, public TCP/UDP 53 still answers, all in-flight
@@ -152,9 +161,9 @@ python3 bootstrap/dns/powerdns-snapshot.py validate \
 
 Local validation verifies capture-time evidence. It does not renew an expired
 fence or prove that writers remain stopped when the snapshot is later imported.
-The future importer must recheck the active fence and destination identity.
+The importer must recheck the active fence and destination identity.
 
-## Contract for a future importer
+## Importer contract
 
 Use `validate_snapshot(snapshot, expected_source, require_final=True)` from this
 module before accepting input. SHA256 covers the complete payload. Separate
@@ -181,8 +190,9 @@ merging of source rows is allowed.
 
 A destination comparison must match **all source rows plus exactly the verified
 owned health seed**. It must not exclude all `.test` zones or legacy health rows.
-Import, sequence restoration, destination hash checks, fencing and writer
-activation need separate reviewed automation; this module performs none of them.
+The [data-only importer](POWERDNS-IMPORT.md) implements row and sequence import
+with independent destination checks. Fencing and writer activation are separate
+operations; this snapshot module performs none of them.
 In particular, `setval` changes are not rolled back after an import error, so a
 retry must never blindly rewind a sequence after any new writer has been enabled.
 

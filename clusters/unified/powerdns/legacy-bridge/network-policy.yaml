@@ -1,0 +1,42 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: legacy-bridge-readers
+  namespace: dns-powerdns
+  labels:
+    app.kubernetes.io/part-of: powerdns-legacy-bridge
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: powerdns
+      app.kubernetes.io/component: reader
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - ipBlock: {cidr: "${LEGACY_CONTABO_VPN_CIDR}"}
+        - ipBlock: {cidr: "${LEGACY_RUBASE_VPN_CIDR}"}
+      ports:
+        - {port: 5353, protocol: UDP}
+        - {port: 5353, protocol: TCP}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: legacy-bridge-api
+  namespace: dns-powerdns
+  labels:
+    app.kubernetes.io/part-of: powerdns-legacy-bridge
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: powerdns
+      app.kubernetes.io/component: api
+  policyTypes: [Ingress]
+  ingress:
+    # Cluster traffic policy uses MASQUERADE. Supply the source observed at the
+    # API Pod from each VPS, not an assumed Node InternalIP or an entire CIDR.
+    - from:
+        - ipBlock: {cidr: "${MSK_API_SOURCE_CIDR}"}
+        - ipBlock: {cidr: "${FIN_API_SOURCE_CIDR}"}
+      ports:
+        - {port: 8081, protocol: TCP}

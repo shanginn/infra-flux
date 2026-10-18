@@ -1,0 +1,45 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: powerdns-legacy-readers
+  namespace: dns-powerdns
+  labels:
+    app.kubernetes.io/part-of: powerdns-legacy-bridge
+spec:
+  type: ClusterIP
+  ipFamilyPolicy: SingleStack
+  ipFamilies: [IPv4]
+  externalIPs:
+    - "${MSK_VPN_ADDRESS}"
+    - "${FIN_VPN_ADDRESS}"
+  externalTrafficPolicy: Local
+  internalTrafficPolicy: Local
+  selector:
+    app.kubernetes.io/name: powerdns
+    app.kubernetes.io/component: reader
+  ports:
+    - {name: dns-udp, port: 5354, targetPort: 5353, protocol: UDP}
+    - {name: dns-tcp, port: 5354, targetPort: 5353, protocol: TCP}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: powerdns-legacy-api
+  namespace: dns-powerdns
+  labels:
+    app.kubernetes.io/part-of: powerdns-legacy-bridge
+spec:
+  type: ClusterIP
+  ipFamilyPolicy: SingleStack
+  ipFamilies: [IPv4]
+  externalIPs:
+    - "${MSK_VPN_ADDRESS}"
+    - "${FIN_VPN_ADDRESS}"
+  # API replicas may run at home; both VPS must reach a ready remote replica.
+  externalTrafficPolicy: Cluster
+  internalTrafficPolicy: Cluster
+  selector:
+    app.kubernetes.io/name: powerdns
+    app.kubernetes.io/component: api
+  ports:
+    - {name: api, port: 18081, targetPort: 8081, protocol: TCP}

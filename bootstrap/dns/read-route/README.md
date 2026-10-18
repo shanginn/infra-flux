@@ -51,6 +51,15 @@ activation gates below. The Contabo preview renders independently with:
 kubectl kustomize bootstrap/dns/read-route/contabo-forwarder
 ```
 
+`contabo-forwarder-flux.example.yaml` is its detached, suspended Flux owner.
+Its required private ConfigMap is `flux-system/legacy-dns-read-forwarder`, with
+the two VPN addresses and `LEGACY_DNS_READ_ROUTE_REVISION`. Validate actual
+capacity, unchanged legacy resources, all four rendered objects and their
+private substitutions before creating that owner. A separate preview can be
+tested against the target health seed before import; this does not qualify as
+customer data or public-route acceptance. Keep both old Service selectors and
+their API ports unchanged during preview preparation.
+
 Legacy variants require the already enrolled hosts' measured, distinct literal
 IPv4 `MSK_VPN_ADDRESS` and `FIN_VPN_ADDRESS` substitutions. The proxy and DNS-only preview policies
 allow only those two `/32` destinations for UDP/TCP 5354. They do not widen Headscale

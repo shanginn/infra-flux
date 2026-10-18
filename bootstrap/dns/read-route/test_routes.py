@@ -149,4 +149,17 @@ class RouteTests(unittest.TestCase):
         self.assertEqual(p['policyTypes'],['Ingress','Egress'])
         self.assertEqual(p['egress'],[{'to':[{'ipBlock':{'cidr':'${MSK_VPN_ADDRESS}/32'}},{'ipBlock':{'cidr':'${FIN_VPN_ADDRESS}/32'}}],'ports':[{'port':5354,'protocol':'UDP'},{'port':5354,'protocol':'TCP'}]}])
 
+    def test_contabo_owner_is_detached_suspended_and_requires_private_map(self):
+        owner=yaml.safe_load((HERE/'contabo-forwarder-flux.example.yaml').read_text())
+        self.assertEqual(owner['metadata'],{'name':'legacy-powerdns-read-forwarder','namespace':'flux-system'})
+        spec=owner['spec']
+        self.assertIs(spec['suspend'],True)
+        self.assertIs(spec['wait'],True)
+        self.assertEqual(spec['path'],'./bootstrap/dns/read-route/contabo-forwarder')
+        self.assertEqual(spec['dependsOn'],[{'name':'vibesites-dns'}])
+        self.assertEqual(spec['postBuild']['substituteFrom'],[{'kind':'ConfigMap','name':'legacy-dns-read-forwarder','optional':False}])
+        for folder in ['clusters','components']:
+            for path in (ROOT/folder).rglob('*.yaml'):
+                self.assertNotIn('legacy-powerdns-read-forwarder',path.read_text(),str(path))
+
 if __name__=='__main__':unittest.main()

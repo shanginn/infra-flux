@@ -230,6 +230,49 @@ class PermissionOrderTests(unittest.TestCase):
             self.inventory(self.entries,grants)
 
 
+class LocalAliasTests(unittest.TestCase):
+ def fixture(self):
+  catalog=[{'id':'one','globalAliases':['global-one'],'localAliases':[{'accessKeyId':'a','alias':'shared'}]},{'id':'two','globalAliases':['global-two'],'localAliases':[{'accessKeyId':'b','alias':'shared'}]}]
+  buckets=[{'id':x['id'],'globalAliases':x['globalAliases'],'keys':[{'accessKeyId':x['localAliases'][0]['accessKeyId'],'bucketLocalAliases':['shared']}]}for x in catalog]
+  keys=[{'accessKeyId':x['localAliases'][0]['accessKeyId'],'buckets':[{'id':x['id'],'localAliases':['shared']}]}for x in catalog]
+  return catalog,buckets,keys
+ def test_same_text_different_keys_preserved(self):
+  a,b,c=self.fixture();before=copy.deepcopy((a,b,c));g.validate_local_aliases(a,b,c);self.assertEqual(before,(a,b,c))
+ def test_same_key_ambiguous_bucket_rejects(self):
+  a,b,c=self.fixture();a[1]['localAliases'][0]['accessKeyId']='a'
+  with self.assertRaises(RuntimeError):g.validate_local_aliases(a,b,c)
+ def test_missing_alias_in_either_metadata_view_rejects(self):
+  for which in ('bucket','key'):
+   a,b,c=self.fixture()
+   if which=='bucket':b[0]['keys'][0]['bucketLocalAliases']=[]
+   else:c[0]['buckets'][0]['localAliases']=[]
+   with self.assertRaises(RuntimeError):g.validate_local_aliases(a,b,c)
+ def test_duplicate_alias_rejected(self):
+  a,b,c=self.fixture();a[0]['localAliases']*=2
+  with self.assertRaises(RuntimeError):g.validate_local_aliases(a,b,c)
+ def test_backup_shadow_rejects_only_other_bucket(self):
+  a,b,c=self.fixture();admin={'buckets':b};cred={'buckets':[{'id':'one','localAliases':['global-two']} ]}
+  with self.assertRaises(RuntimeError):g.validate_backup_aliases(admin,cred)
+  cred['buckets'][0]['localAliases']=['global-one','other-name'];g.validate_backup_aliases(admin,cred)
+ def test_alias_metadata_survives_full_stream(self):
+  catalog,buckets,keys=self.fixture()
+  for bucket in buckets:bucket['bytes']=128000;bucket['objects']=2
+  for key in keys:key['secretAccessKey']='synthetic-secret'
+  def api(pod,name,body=None):
+   if name=='ListBuckets':return copy.deepcopy(catalog)
+   if name=='GetBucketInfo':return copy.deepcopy(next(b for b in buckets if b['id']==body['id']))
+   if name=='ListKeys':return [{'id':key['accessKeyId']}for key in keys]
+   if name=='GetKeyInfo':return copy.deepcopy(next(k for k in keys if k['accessKeyId']==body['id']))
+   raise AssertionError(name)
+  with patch.object(g,'admin_api',side_effect=api):admin=g.inventory_admin('synthetic-pod')
+  stream=io.BytesIO();g.export_stream(Client(),admin,{'name':'test'},stream,LIMIT,10)
+  payload=stream.getvalue();self.assertEqual(g.verify_stream(io.BytesIO(payload),LIMIT,10,'test')['objects'],4)
+  with tarfile.open(fileobj=io.BytesIO(payload)) as archive:
+   recovered=json.load(archive.extractfile('admin.json'));self.assertEqual(recovered,admin)
+   self.assertEqual(recovered['keys'][0]['buckets'][0]['localAliases'],['shared'])
+   self.assertEqual(recovered['keys'][1]['buckets'][0]['localAliases'],['shared'])
+
+
 if __name__ == '__main__':
     if sys.argv[1:] == ['--produce']:
         sys.stdout.buffer.write(produce())

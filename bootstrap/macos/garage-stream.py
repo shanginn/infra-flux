@@ -282,8 +282,10 @@ def admin_api(pod, name, body=None):
 
 def inventory_admin(pod):
     buckets = admin_api(pod, 'ListBuckets')
-    require(len(buckets) <= 1000 and all(len(b['globalAliases']) == 1 and not b['localAliases'] for b in buckets),
-            'All buckets must have exactly one global alias and no local aliases')
+    require(len(buckets) <= 1000 and all(len(b['globalAliases']) == 1 for b in buckets),
+            'All buckets must have exactly one canonical global alias')
+    require(len({b['id'] for b in buckets}) == len(buckets) and
+            len({b['globalAliases'][0] for b in buckets}) == len(buckets), 'Duplicate bucket ID or global alias')
     details = [admin_api(pod, 'GetBucketInfo', {'id': b['id']}) for b in sorted(buckets, key=lambda b: b['id'])]
     for bucket in details:
         # Garage returns this permission set without a stable order. Normalize only
@@ -312,7 +314,55 @@ def inventory_admin(pod):
         ids = [entry['id'] for entry in entries]
         require(len(ids) == len(set(ids)), 'Duplicate key bucket IDs')
         key['buckets'] = sorted(entries, key=lambda entry: entry['id'])
+    validate_local_aliases(buckets, details, keys)
     return {'buckets': details, 'keys': keys}
+
+
+def validate_local_aliases(catalog, buckets, keys):
+    """Preserve and cross-check (access key, alias) -> bucket in all native views."""
+    expected = {}
+    for bucket in catalog:
+        entries = bucket.get('localAliases', [])
+        require(isinstance(entries, list), 'Invalid local alias list')
+        for entry in entries:
+            require(isinstance(entry, dict) and set(entry) == {'accessKeyId', 'alias'} and
+                    all(isinstance(v, str) and v for v in entry.values()), 'Invalid local alias entry')
+            pair = (entry['accessKeyId'], entry['alias'])
+            require(pair not in expected, 'Duplicate or ambiguous key-local alias')
+            expected[pair] = bucket['id']
+    def aliases(values):
+        require(isinstance(values, list) and all(isinstance(v, str) and v for v in values) and
+                len(values) == len(set(values)), 'Invalid or duplicate local alias names')
+        return sorted(values)
+    bucket_view = {}
+    for bucket in buckets:
+        for entry in bucket['keys']:
+            names = aliases(entry.get('bucketLocalAliases', []))
+            if 'bucketLocalAliases' in entry:
+                entry['bucketLocalAliases'] = names
+            for name in names:
+                pair = (entry['accessKeyId'], name)
+                require(pair not in bucket_view, 'Ambiguous bucket permission alias')
+                bucket_view[pair] = bucket['id']
+    key_view = {}
+    for key in keys:
+        for bucket in key['buckets']:
+            names = aliases(bucket.get('localAliases', []))
+            if 'localAliases' in bucket:
+                bucket['localAliases'] = names
+            for name in names:
+                pair = (key['accessKeyId'], name)
+                require(pair not in key_view, 'Ambiguous access-key alias')
+                key_view[pair] = bucket['id']
+    require(expected == bucket_view == key_view, 'Local alias metadata views disagree')
+
+
+def validate_backup_aliases(admin, credentials):
+    global_names = {b['globalAliases'][0]: b['id'] for b in admin['buckets']}
+    for bucket in credentials['buckets']:
+        for alias in bucket.get('localAliases', []):
+            require(alias not in global_names or global_names[alias] == bucket['id'],
+                    'Backup key local alias shadows a different canonical global bucket')
 
 
 @contextmanager
@@ -366,6 +416,7 @@ def export(maximum_bytes, maximum_objects):
     admin = inventory_admin(pod)
     credentials = next(key for key in admin['keys'] if key['accessKeyId'] == key_id)
     require(not credentials['expired'] and not credentials['permissions']['createBucket'], 'Backup key must be active and unable to create buckets')
+    validate_backup_aliases(admin, credentials)
     grants = {b['id']: b['permissions'] for b in credentials['buckets']}
     require(set(grants) == {b['id'] for b in admin['buckets']} and all(p['read'] and not p['write'] and not p['owner'] for p in grants.values()),
             'Backup key must have read-only access to every bucket')

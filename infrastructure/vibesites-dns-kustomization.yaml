@@ -8,7 +8,12 @@ spec:
   path: ./clusters/rubase/vibesites-dns
   prune: true
   dependsOn:
-    - name: infrastructure
+  - name: infrastructure
   sourceRef:
     kind: GitRepository
     name: flux-system
+  postBuild:
+    substituteFrom:
+    - kind: ConfigMap
+      name: legacy-public-dns-route
+      optional: false

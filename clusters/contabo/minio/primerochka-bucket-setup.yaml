@@ -5,6 +5,7 @@ metadata:
   name: minio-primerochka-setup
   namespace: minio
   annotations:
+    kustomize.toolkit.fluxcd.io/substitute: disabled
     jobRevision: "3"
 spec:
   ttlSecondsAfterFinished: 3600

@@ -2,6 +2,8 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: vibesites-dnsdist
+  annotations:
+    kustomize.toolkit.fluxcd.io/substitute: disabled
   labels:
     app: dnsdist
     app.kubernetes.io/name: dnsdist

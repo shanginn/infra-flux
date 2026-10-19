@@ -19,6 +19,11 @@ metadata:
   name: flux-system
   namespace: flux-system
 spec:
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: legacy-public-dns-route
+        optional: false
   decryption:
     provider: sops
     secretRef:

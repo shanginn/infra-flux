@@ -71,11 +71,28 @@ allow only those two `/32` destinations for UDP/TCP 5354. They do not widen Head
 ACLs. Verify actual source translation and receiver policy from each consumer
 before enabling a route; a host-level success alone does not prove Pod access.
 
-The dnsdist and Contabo preview Pod templates also require
-`LEGACY_DNS_READ_ROUTE_REVISION`: SHA-256 of compact sorted JSON containing the
-two addresses **and** the SHA-256 of each applied variant file. Compute it from
-reviewed private values, retain it in a private watched ConfigMap, and reject
-unresolved substitutions. This makes address or source changes trigger a rollout.
+The legacy public DNS owners use a separate private ConfigMap,
+`flux-system/legacy-public-dns-route`, containing `MSK_VPN_ADDRESS`,
+`FIN_VPN_ADDRESS` and `LEGACY_DNS_READ_ROUTE_REVISION`. Create this map before
+adding its required `substituteFrom` reference to every existing owner of the
+DNSdist objects. Keep the preview ConfigMaps separate.
+
+For DNSdist, compute the revision as SHA-256 of compact, key-sorted JSON with
+`dnsdist.conf` containing the final substituted configuration and
+`deployment_patch_sha256` containing the SHA-256 of the final
+`legacy-dnsdist/deployment-patch.yaml` bytes. For the separate Contabo preview,
+retain its existing revision contract over the two addresses and applied variant
+file hashes. Reject unresolved substitutions and recompute the appropriate
+revision whenever its addresses or source files change.
+
+The current DNSdist Deployment opts out of Flux substitution in its top-level
+metadata so shell variables in its existing command remain intact. The future
+`legacy-dnsdist` component explicitly enables substitution after replacing that
+command. The prerequisite annotation alone leaves the Pod template unchanged.
+Any other object under that owner that contains literal shell variables or
+schema examples must also opt out at the object level. Keep its spec and Pod
+template unchanged. Render every actual owner, including an overlapping legacy
+root owner, and compare complete objects before publishing the transition.
 The existing Rubase proxy keeps its existing private-map contract and revision
 annotation; its generated ConfigMap changes when this Corefile is merged. Do
 not remove the old address variable from its private map in the same step.

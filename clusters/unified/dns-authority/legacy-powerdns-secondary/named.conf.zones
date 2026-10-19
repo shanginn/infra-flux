@@ -1,0 +1,166 @@
+// The zone data comes from the shared legacy Git generator.
+// Dynamic zones deliberately never load their Git seed as a writable master.
+
+zone "shanginn.ru" IN {
+    type primary;
+    file "/zones/shanginn.ru";
+    allow-update { none; };
+};
+
+zone "shanginn.io" IN {
+    type primary;
+    file "/zones/shanginn.io";
+    allow-update { none; };
+};
+
+zone "xn--80alfarbic0a3a.xn--p1ai" IN {
+    type primary;
+    file "/zones/minijurnal.rf";
+    allow-update { none; };
+};
+
+zone "xn--b1abcbftdmxceabz.xn--p1ai" IN {
+    type primary;
+    file "/zones/dorogoidnevnik.rf";
+    allow-update { none; };
+};
+
+zone "xn--80afga3bt4c.xn--p1ai" IN {
+    type primary;
+    file "/zones/generach.rf";
+    allow-update { none; };
+};
+
+zone "generach.ru" IN {
+    type primary;
+    file "/zones/generach.ru";
+    allow-update { none; };
+};
+
+zone "xn--e1afqnbgc.xn--p1ai" IN {
+    type primary;
+    file "/zones/sistent.rf";
+    allow-update { none; };
+};
+
+zone "sistent.ru" IN {
+    type primary;
+    file "/zones/sistent.ru";
+    allow-update { none; };
+};
+
+zone "sputi.ru" IN {
+    type primary;
+    file "/zones/sputi.ru";
+    allow-update { none; };
+};
+
+zone "xn--80ahnllf1ado3f.xn--p1ai" IN {
+    type primary;
+    file "/zones/udalitfon.rf";
+    allow-update { none; };
+};
+
+zone "xn--80aakfartrcj1ct.xn--p1ai" IN {
+    type primary;
+    file "/zones/udaleniefona.rf";
+    allow-update { none; };
+};
+
+zone "mystaro.ru" IN {
+    type primary;
+    file "/zones/mystaro.ru";
+    allow-update { none; };
+};
+
+zone "xn--80ajijindid5e.xn--p1ai" IN {
+    type primary;
+    file "/zones/primerochka.rf";
+    allow-update { none; };
+};
+
+zone "itaisolutions.ru" IN {
+    type primary;
+    file "/zones/itaisolutions.ru";
+    allow-update { none; };
+};
+
+zone "vibesites.ru" IN {
+    type secondary;
+    file "/var/lib/bind/vibesites.ru";
+    primaries { legacy-bind; };
+    allow-notify { none; };
+    allow-update-forwarding { none; };
+};
+
+zone "xn--80aacc0bc7ayl4g.xn--p1ai" IN {
+    type secondary;
+    file "/var/lib/bind/vibesites.rf";
+    primaries { legacy-bind; };
+    allow-notify { none; };
+    allow-update-forwarding { none; };
+};
+
+zone "flowerswork.ru" IN {
+    type primary;
+    file "/zones/flowerswork.ru";
+    allow-update { none; };
+};
+
+zone "flowerworks.ru" IN {
+    type primary;
+    file "/zones/flowerworks.ru";
+    allow-update { none; };
+};
+
+zone "xn--80aafk8cdei3c.xn--p1ai" IN {
+    type primary;
+    file "/zones/restavrach.rf";
+    allow-update { none; };
+};
+
+zone "shanghaiauto.ru" IN {
+    type primary;
+    file "/zones/shanghaiauto.ru";
+    allow-update { none; };
+};
+
+zone "aufstaff.ru" IN {
+    type primary;
+    file "/zones/aufstaff.ru";
+    allow-update { none; };
+};
+
+zone "xn--80aao3bdhk2b9b.xn--p1ai" IN {
+    type primary;
+    file "/zones/raspechat.rf";
+    allow-update { none; };
+};
+
+// Optional live copies from the existing PowerDNS writer. No Git zone seed.
+zone "xn--80aaa0aef8ckd2c.xn--p1ai" IN {
+    type secondary;
+    file "/var/lib/bind/pdns-xn--80aaa0aef8ckd2c.xn--p1ai";
+    primaries { legacy-powerdns; };
+    request-ixfr no;
+    allow-notify { none; };
+    allow-update-forwarding { none; };
+};
+
+zone "xn--80agrjfkbaugg.xn--p1ai" IN {
+    type secondary;
+    file "/var/lib/bind/pdns-xn--80agrjfkbaugg.xn--p1ai";
+    primaries { legacy-powerdns; };
+    request-ixfr no;
+    allow-notify { none; };
+    allow-update-forwarding { none; };
+};
+
+zone "xn--90aoavb.xn--p1ai" IN {
+    type secondary;
+    file "/var/lib/bind/pdns-xn--90aoavb.xn--p1ai";
+    primaries { legacy-powerdns; };
+    request-ixfr no;
+    allow-notify { none; };
+    allow-update-forwarding { none; };
+};

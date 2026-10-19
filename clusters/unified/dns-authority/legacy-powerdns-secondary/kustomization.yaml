@@ -1,0 +1,12 @@
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+# Inactive: the dns-authority parent does not include this component.
+resources:
+  - network-policy.yaml
+configMapGenerator:
+  - name: bind-authority-config
+    behavior: merge
+    options:
+      disableNameSuffixHash: true
+    files:
+      - named.conf.zones

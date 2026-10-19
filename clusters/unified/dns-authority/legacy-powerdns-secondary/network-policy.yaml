@@ -1,0 +1,15 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: bind-authority-legacy-powerdns
+  namespace: dns-authority
+spec:
+  podSelector:
+    matchLabels: {app: bind-authority}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - ipBlock: {cidr: "${RUBASE_VPN_ADDRESS}/32"}
+      ports:
+        - {port: 5355, protocol: UDP}
+        - {port: 5355, protocol: TCP}

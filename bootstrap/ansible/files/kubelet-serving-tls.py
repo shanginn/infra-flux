@@ -29,6 +29,8 @@ OWNER = 'infra-flux/kubelet-serving-tls-v1'
 ROOT = Path('/etc/infra-flux/kubelet-serving-tls')
 CONFIG = Path('/var/lib/kubelet/config.yaml')
 SERVER_CERT = Path('/var/lib/kubelet/pki/kubelet-server-current.pem')
+MEMORY_ROOT = Path('/etc/infra-flux/kubelet-memory-maintenance')
+MEMORY_OWNER = 'infra-flux/kubelet-memory-v1'
 BASE_SHA = '93bcb56f662d4b8e56b76235543c62f1465bbc9d5b1350417aa1867f7f6fd7f3'
 base = common = None
 
@@ -104,6 +106,45 @@ def read_record():
     return record
 
 
+def validate_memory_descendant(record, proof, raw, candidate, memory, before):
+    """Accept only the completed VPS memory-only successor of our original config."""
+    require(record['phase'] == 'verified' and proof['node'] in ('msk', 'fin') and
+            memory.get('owner') == MEMORY_OWNER and memory.get('phase') == 'verified' and
+            re.fullmatch('[0-9a-f]{32}', memory.get('token', '')), 'Unverified memory maintenance descendant')
+    for key in ('node', 'node_uid', 'machine_id', 'ca_sha256', 'bootstrap_sha256'):
+        require(memory.get(key) == proof[key] == record[key], 'Memory descendant identity changed: ' + key)
+    require(sha(before) == memory.get('before_sha256') == record['after_sha256'] and
+            sha(raw) == memory.get('after_sha256') and raw == candidate and patch_config(before) == before,
+            'Memory descendant does not extend the original serving config')
+    obj = yaml.load(before, Loader=StrictLoader)
+    require(isinstance(obj.get('systemReserved'), dict) and obj['systemReserved'].get('memory') == '4Gi',
+            'Unexpected original reserved memory')
+    blocks = list(re.finditer(rb'^systemReserved:[ \t]*\r?\n(?:[ \t]+[^\r\n]*\r?\n)*', before, re.M))
+    require(len(blocks) == 1, 'Unexpected systemReserved block syntax')
+    block = blocks[0]
+    lines = list(re.finditer(rb'^([ \t]+memory:[ \t]*)4Gi([ \t]*\r?\n)', block.group(), re.M))
+    require(len(lines) == 1, 'Unexpected memory scalar syntax')
+    line = lines[0]
+    replacement = line.group(1) + b'2Gi' + line.group(2)
+    expected = before[:block.start()+line.start()] + replacement + before[block.start()+line.end():]
+    wanted = copy.deepcopy(obj); wanted['systemReserved']['memory'] = '2Gi'
+    require(raw == expected and yaml.load(raw, Loader=StrictLoader) == wanted,
+            'Changes outside reserved memory 4Gi to 2Gi are forbidden')
+
+
+def memory_descendant(record, proof, raw, candidate):
+    st = MEMORY_ROOT.lstat()
+    require(stat.S_ISDIR(st.st_mode) and st.st_uid == st.st_gid == 0 and stat.S_IMODE(st.st_mode) == 0o700,
+            'Untrusted memory maintenance directory')
+    paths = [MEMORY_ROOT / 'record.json', MEMORY_ROOT / 'config.before.yaml']
+    for path in paths:
+        info = path.lstat()
+        require(info.st_gid == 0 and stat.S_IMODE(info.st_mode) == 0o600, 'Untrusted memory maintenance preimage mode')
+    memory = json.loads(common.trusted(paths[0], True))
+    before = common.trusted(paths[1], True)
+    validate_memory_descendant(record, proof, raw, candidate, memory, before)
+
+
 def inspect(node, ca=None):
     prior, _, _, marker, endpoint_record = base.inspect(node, ca)
     require(endpoint_record and endpoint_record['phase'] == 'verified' and prior['server'] == base.ENDPOINT,
@@ -118,7 +159,9 @@ def inspect(node, ca=None):
     if record:
         for key in ('node', 'node_uid', 'machine_id', 'ca_sha256', 'bootstrap_sha256'):
             require(proof[key] == record[key], 'Maintenance identity changed: ' + key)
-        require(record['after_sha256'] == sha(candidate) and sha(raw) in (record['before_sha256'], record['after_sha256']), 'Config changed outside maintenance')
+        original = record['after_sha256'] == sha(candidate) and sha(raw) in (record['before_sha256'], record['after_sha256'])
+        if not original:
+            memory_descendant(record, proof, raw, candidate)
     return proof, raw, candidate, marker, record, host
 
 

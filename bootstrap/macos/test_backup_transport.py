@@ -92,6 +92,34 @@ class Transport(unittest.TestCase):
             v.verify_restore(self.metadata, self.sql, 'homelab-vpn')
         self.assertNotIn('-J', call.call_args.args[0])
 
+    def test_overlay_alias_keeps_home_restore_and_strict_hostkey_checks(self):
+        proof = {'restore_completed': True, 'pg_amcheck_completed': True, 'scratch_removed': True,
+                 'sql_sha256': self.metadata['sql_sha256']}
+        with patch.object(v.subprocess, 'run', return_value=types.SimpleNamespace(
+                returncode=0, stdout=json.dumps(proof).encode())) as call:
+            self.assertEqual(v.verify_restore(self.metadata, self.sql, 'homelab-overlay',
+                                             ssh_jump_chain=['gateway', 'relay']), proof)
+        args = call.call_args.args[0]
+        self.assertEqual(args[-2], 'homelab-overlay')
+        self.assertEqual(args[args.index('-J') + 1], 'gateway,relay')
+        self.assertIn('StrictHostKeyChecking=yes', args)
+        self.assertIn("marker['node_name']=='home'", v.REMOTE_RESTORE)
+        self.assertIn("marker['ca_sha256']==expected['ca_sha256']", v.REMOTE_RESTORE)
+        self.assertEqual(call.call_count, 1)
+
+    def test_overlay_failure_is_not_retried_and_alias_variants_are_rejected(self):
+        with patch.object(v.subprocess, 'run', side_effect=subprocess.TimeoutExpired('ssh',4260)) as call:
+            with self.assertRaises(subprocess.TimeoutExpired):
+                v.verify_restore(self.metadata,self.sql,'homelab-overlay')
+            self.assertEqual(call.call_count,1)
+        with patch.object(v.subprocess, 'run') as call:
+            for alias in ('homelab-overlay-2','root@homelab-overlay','homelab-overlay -o StrictHostKeyChecking=no'):
+                with self.subTest(alias=alias), self.assertRaises(RuntimeError):
+                    v.verify_restore(self.metadata,self.sql,alias)
+            with self.assertRaises(RuntimeError):
+                v.verify_restore(self.metadata,self.sql,'homelab-overlay',ssh_jump_chain=['homelab-overlay'])
+            call.assert_not_called()
+
     def test_backup_passes_restore_chain_separately_from_export(self):
         job = {'name': 'pg', 'component': 'postgres', 'max_bytes': 1024, 'cluster_name': 'test',
                'restore_ssh_alias': 'homelab-vpn', 'restore_ssh_jump_chain': ['gateway', 'relay']}

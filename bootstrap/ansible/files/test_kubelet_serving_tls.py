@@ -29,6 +29,84 @@ authorization: {mode: Webhook}
 rotateCertificates: true
 '''
 
+
+class MemoryDescendant(unittest.TestCase):
+    def setUp(self):
+        self.before = m.patch_config(RAW + b'systemReserved:\n  cpu: 100m\n  memory: 4Gi\nevictionHard:\n  memory.available: 200Mi\n')
+        self.after = self.before.replace(b'  memory: 4Gi\n', b'  memory: 2Gi\n')
+        self.proof = {'node':'fin','node_uid':'uid','machine_id':'machine','ca_sha256':'c'*64,'bootstrap_sha256':'b'*64}
+        self.record = dict(self.proof, phase='verified', after_sha256=m.sha(self.before))
+        self.memory = dict(self.proof, owner=m.MEMORY_OWNER, phase='verified', token='d'*32,
+                           before_sha256=m.sha(self.before), after_sha256=m.sha(self.after))
+
+    def check(self):
+        m.validate_memory_descendant(self.record, self.proof, self.after, m.patch_config(self.after), self.memory, self.before)
+
+    def test_exact_completed_descendant_preserves_original_record(self):
+        original = copy.deepcopy(self.record)
+        self.check()
+        self.assertEqual(self.record, original)
+        self.proof['node'] = self.record['node'] = self.memory['node'] = 'msk'
+        self.check()
+
+    def test_actual_memory_transform_composes_with_serving_tls_guard(self):
+        spec=importlib.util.spec_from_file_location('memory_descendant_subject',Path(__file__).with_name('kubelet-memory-maintenance.py'))
+        memory=importlib.util.module_from_spec(spec);spec.loader.exec_module(memory)
+        self.before=self.before.replace(b'cpu: 100m',b'cpu: "1"')
+        self.after=memory.patch_memory(self.before)
+        self.record['after_sha256']=self.memory['before_sha256']=m.sha(self.before)
+        self.memory['after_sha256']=m.sha(self.after)
+        self.check()
+
+    def test_home_is_not_admitted(self):
+        self.proof['node'] = self.record['node'] = self.memory['node'] = 'home'
+        with self.assertRaises(RuntimeError): self.check()
+
+    def test_incomplete_or_foreign_memory_record_is_rejected(self):
+        for key,value in [('phase','restart-intent'),('owner','foreign'),('token','unknown')]:
+            with self.subTest(key=key):
+                old=self.memory[key];self.memory[key]=value
+                with self.assertRaises(RuntimeError): self.check()
+                self.memory[key]=old
+        self.record['phase']='restart-intent'
+        with self.assertRaises(RuntimeError): self.check()
+
+    def test_all_identity_fields_are_bound(self):
+        for key in self.proof:
+            with self.subTest(key=key):
+                old=self.memory[key];self.memory[key]='changed'
+                with self.assertRaises(RuntimeError): self.check()
+                self.memory[key]=old
+
+    def test_ancestor_and_successor_hashes_are_bound(self):
+        for key in ('before_sha256','after_sha256'):
+            with self.subTest(key=key):
+                old=self.memory[key];self.memory[key]='0'*64
+                with self.assertRaises(RuntimeError): self.check()
+                self.memory[key]=old
+        self.record['after_sha256']='0'*64
+        with self.assertRaises(RuntimeError): self.check()
+
+    def test_cpu_eviction_and_unrelated_bytes_cannot_change(self):
+        original=self.after
+        for old,new in [(b'cpu: 100m',b'cpu: 200m'),(b'memory.available: 200Mi',b'memory.available: 100Mi'),
+                        (b'rotateCertificates: true',b'rotateCertificates: false'),(b'cpu: 100m',b'cpu:  100m')]:
+            with self.subTest(old=old):
+                self.after=original.replace(old,new);self.memory['after_sha256']=m.sha(self.after)
+                with self.assertRaises(RuntimeError): self.check()
+
+    def test_wrong_memory_or_serving_bootstrap_rejected_even_with_matching_hash(self):
+        original=self.after
+        for old,new in [(b'memory: 2Gi',b'memory: 1Gi'),(b'serverTLSBootstrap: true',b'serverTLSBootstrap: false')]:
+            with self.subTest(old=old):
+                self.after=original.replace(old,new);self.memory['after_sha256']=m.sha(self.after)
+                with self.assertRaises(RuntimeError): self.check()
+
+    def test_duplicate_yaml_rejected(self):
+        self.before+=b'systemReserved: {memory: 4Gi}\n'
+        self.memory['before_sha256']=self.record['after_sha256']=m.sha(self.before)
+        with self.assertRaises(RuntimeError): self.check()
+
 def csr_obj(key=None, subject=None, sans=None, extension=None):
     import ipaddress
     key=key or ec.generate_private_key(ec.SECP256R1())

@@ -2,7 +2,7 @@
 """Verify a PostgreSQL framed backup, then restore only into an isolated scratch.
 
 read_stream() checks framing/checksums into a new private Mac file. It is not a
-restore test. verify_restore() explicitly uses the existing home SSH alias and
+restore test. verify_restore() explicitly uses a reviewed home SSH alias and
 an isolated, temporary PG18 containerd container. It never starts Docker or
 connects restored SQL to a production PostgreSQL server.
 """
@@ -21,6 +21,7 @@ import tempfile
 
 MAGIC = b'INFRA-POSTGRES-DUMPALL/1\n'
 IMAGE = 'ghcr.io/shanginn/infra-flux-patroni@sha256:5581048b8a2c28f0e3e16aa481c1b5f094c425edeaa9900bf1aef651da16863f'
+HOME_RESTORE_ALIASES = ('homelab-vpn', 'homelab-overlay')
 
 
 def require(condition, message):
@@ -194,7 +195,7 @@ print(json.dumps(proof|{'scratch_removed':True,'sql_sha256':expected['sql_sha256
 
 def verify_restore(metadata, sql_file, ssh_alias, *, ssh_jump_chain=None):
     """Run only after explicit selection of the scratch restore host."""
-    require(ssh_alias == 'homelab-vpn', 'Only the reviewed home scratch host is supported')
+    require(ssh_alias in HOME_RESTORE_ALIASES, 'Only the reviewed home scratch aliases are supported')
     chain = [] if ssh_jump_chain is None else ssh_jump_chain
     require(isinstance(chain, list) and len(chain) <= 3 and
             all(isinstance(alias, str) and re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,63}', alias) for alias in chain),
@@ -225,7 +226,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--max-bytes', type=int, required=True)
     parser.add_argument('--cluster-name', required=True)
-    parser.add_argument('--verify-ssh', choices=['homelab-vpn'], required=True)
+    parser.add_argument('--verify-ssh', choices=HOME_RESTORE_ALIASES, required=True)
     parser.add_argument('--staging-parent', type=Path, required=True)
     args = parser.parse_args()
     try:

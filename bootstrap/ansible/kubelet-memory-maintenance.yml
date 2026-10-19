@@ -1,0 +1,43 @@
+---
+# One explicitly selected VPS per invocation; run MSK, verify, then FIN.
+- name: Maintain only the existing VPS kubelet memory reservation
+  hosts: control_plane
+  become: true
+  gather_facts: false
+  any_errors_fatal: true
+  vars:
+    kubelet_memory_action: inspect
+    kubelet_memory_review: {}
+  tasks:
+    - name: Require one VPS and an explicit action outside apply check mode
+      ansible.builtin.assert:
+        that:
+          - ansible_play_hosts_all in [['msk'], ['fin']]
+          - inventory_hostname in ['msk', 'fin']
+          - kubelet_memory_action in ['inspect', 'apply', 'readback']
+          - kubelet_memory_action != 'apply' or not ansible_check_mode
+          - kubelet_memory_action != 'apply' or kubelet_memory_review.node == inventory_hostname
+        fail_msg: Select exactly one VPS with --limit; HOME and whole-cluster application are forbidden.
+
+    - name: Run the frozen helper in memory without installing or replaying bootstrap
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/python3
+          - -c
+          - "{{ lookup('ansible.builtin.file', playbook_dir ~ '/files/kubelet-memory-maintenance.py', rstrip=False) }}"
+          - "{{ kubelet_memory_action }}"
+          - --node
+          - "{{ inventory_hostname }}"
+          - --endpoint-source
+          - "{{ lookup('ansible.builtin.file', playbook_dir ~ '/files/kubelet-endpoint-maintenance.py', rstrip=False) }}"
+          - --shared-source
+          - "{{ lookup('ansible.builtin.file', playbook_dir ~ '/files/etcd-probe-maintenance.py', rstrip=False) }}"
+          - --review-json
+          - "{{ kubelet_memory_review | to_json }}"
+      check_mode: false
+      changed_when: kubelet_memory_action == 'apply'
+      register: kubelet_memory_result
+
+    - name: Return the exact private inspection or maintenance receipt
+      ansible.builtin.debug:
+        msg: "{{ kubelet_memory_result.stdout | from_json }}"

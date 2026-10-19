@@ -1,0 +1,59 @@
+[
+  {
+    "op": "test",
+    "path": "/spec/selector",
+    "value": {
+      "app": "powerdns",
+      "app.kubernetes.io/name": "powerdns"
+    }
+  },
+  {
+    "op": "test",
+    "path": "/spec/ports",
+    "value": [
+      {
+        "name": "dns-tcp",
+        "port": 53,
+        "protocol": "TCP",
+        "targetPort": "dns-tcp"
+      },
+      {
+        "name": "dns-udp",
+        "port": 53,
+        "protocol": "UDP",
+        "targetPort": "dns-udp"
+      },
+      {
+        "name": "http-api",
+        "port": 8081,
+        "protocol": "TCP",
+        "targetPort": "http-api"
+      }
+    ]
+  },
+  {
+    "op": "replace",
+    "path": "/spec/selector",
+    "value": {
+      "app.kubernetes.io/name": "legacy-pdns-read-forwarder"
+    }
+  },
+  {
+    "op": "replace",
+    "path": "/spec/ports",
+    "value": [
+      {
+        "name": "dns-tcp",
+        "port": 53,
+        "protocol": "TCP",
+        "targetPort": "dns-tcp"
+      },
+      {
+        "name": "dns-udp",
+        "port": 53,
+        "protocol": "UDP",
+        "targetPort": "dns-udp"
+      }
+    ]
+  }
+]

@@ -1,12 +1,12 @@
 # Optional PowerDNS read routes
 
 `rubase-proxy` is referenced by the separate Rubase preview owner.
-The Contabo preview uses a detached standalone owner; the two public-route
-components remain **inactive**.
-The three Kustomize Components are alternatives for existing owners; the fourth
-directory creates only a separately labelled DNS preview. They do not import
-data, fence a database, enable a writer, change registrar settings or switch an
-existing Service selector.
+The Contabo preview uses a detached standalone owner. `public-reader-egress`
+permits the public listeners to reach their local readers. Public customer-route
+and retained Contabo alias components remain **inactive**.
+These components do not import data, fence a database, enable a writer or change
+registrar settings. Only `contabo-aliases` changes existing Service selectors;
+it also removes their API port after the separate migration gates pass.
 
 | Variant | Existing owner to change later | Result |
 | --- | --- | --- |
@@ -14,6 +14,9 @@ existing Service selector.
 | `rubase-proxy` | Dedicated `legacy-powerdns-api-proxy` Kustomization | Send its DNS ports directly to both private reader entries; preserve HAProxy API configuration. |
 | `unified-public` | Unified `public-dns` Kustomization | Keep the local `apps.shanginn.io` authority and all 22 BIND suffixes; send the default route to the node-local PowerDNS reader Service. |
 | `contabo-forwarder` | A new, explicitly bootstrapped standalone preview owner | Two DNS-only Pods and a separate preview Service. No API listener, API credential or permission to VPN port 18081. |
+| `public-reader-egress` | Unified `public-dns` Kustomization | Permit UDP/TCP 5353 from the public listeners to the PowerDNS reader Pods. No routing change. |
+| `public-per-site/msk`, `public-per-site/fin` | Unified `public-dns` Kustomization after the per-site bootstrap | Change one selected Corefile at a time, retaining the other site's serving process and route. Do not combine with `unified-public`. |
+| `contabo-aliases` | All existing owners of the two Contabo DNS Services | Keep their DNS addresses and ports, select the existing DNS-only preview, and remove the TCP 8081 Service port. |
 
 Use the existing Flux owner for every existing resource. Check actual inventories
 and managed fields first, including any legacy root owner that also claims DNS
@@ -27,6 +30,7 @@ Run the offline tests from the repository root:
 
 ```sh
 python3 bootstrap/dns/read-route/test_routes.py
+python3 bootstrap/dns/read-route/test_contabo_aliases.py
 ```
 
 The tests invoke `kubectl kustomize`, with PyYAML installed, and compare complete
@@ -154,9 +158,10 @@ The following gates apply before changing any retained production read path.
    retain DNS 53 UDP/TCP and their named target ports, and explicitly **remove
    the TCP 8081 Service port**. The preview has no `http-api` container port or
    listener. Closing 8081 is intentional; never silently redirect Contabo API
-   writes or give that VPN client a writer tag. This selector/port patch is not
-   included here. If a real Contabo writer is still required, resolve its
-   ownership/routing separately before this step.
+   writes or give that VPN client a writer tag. If a real Contabo writer is still
+   required, resolve its ownership/routing separately before this step. The inactive
+   [contabo-aliases component](contabo-aliases/README.md) contains this exact
+   selector/port patch and rejects changed source selectors or port lists.
 6. Prove fresh backend attribution for every changed path while writers remain
    fenced. Equal old/new answers are insufficient because both databases can
    contain the same frozen data. Use scoped request counters or observed fresh

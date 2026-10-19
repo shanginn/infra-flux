@@ -1,0 +1,28 @@
+---
+- name: Inspect or perform one reviewed PostgreSQL connection-capacity step
+  hosts: msk
+  become: true
+  gather_facts: false
+  vars:
+    postgres_capacity_action: inspect
+    postgres_capacity_enabled: false
+  tasks:
+    - name: Require one management host and explicit mutation opt-in
+      ansible.builtin.assert:
+        that:
+          - ansible_play_hosts_all == ['msk']
+          - postgres_cluster_uid is defined
+          - postgres_capacity_action in ['inspect', 'readback', 'patch', 'restart-msk', 'restart-fin', 'restart-home']
+          - postgres_capacity_action in ['inspect', 'readback'] or (postgres_capacity_enabled | bool and not ansible_check_mode)
+          - postgres_capacity_action in ['inspect', 'readback'] or (postgres_capacity_operation is defined and postgres_capacity_review is defined)
+
+    - name: Run only the selected bounded step using existing Pod-local Patroni API
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/python3
+          - -c
+          - "{{ lookup('ansible.builtin.file', 'files/postgres/capacity.py') }}"
+        stdin: "{{ {'action': postgres_capacity_action, 'enabled': postgres_capacity_enabled | bool, 'cluster_uid': postgres_cluster_uid, 'operation': postgres_capacity_operation | default(''), 'review': postgres_capacity_review | default({})} | to_json }}"
+      register: postgres_capacity_result
+      changed_when: postgres_capacity_action not in ['inspect', 'readback'] and postgres_capacity_result.rc == 0
+      check_mode: false

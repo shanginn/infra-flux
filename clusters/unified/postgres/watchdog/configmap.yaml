@@ -59,7 +59,8 @@ data:
             wal_sender_timeout: 30s
             wal_receiver_timeout: 30s
             archive_mode: 'off'
-            max_connections: 100
+            # Existing clusters need the explicit Patroni capacity procedure too.
+            max_connections: 200
             shared_buffers: 512MB
             effective_cache_size: 2GB
             work_mem: 4MB

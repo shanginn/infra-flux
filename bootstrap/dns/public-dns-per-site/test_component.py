@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Render-scope guards for the per-site DNS bootstrap."""
-import copy,json,pathlib,shutil,subprocess,tempfile,unittest
+import copy,json,os,pathlib,shutil,subprocess,tempfile,unittest
 import yaml
 ROOT=pathlib.Path(__file__).resolve().parents[3];HERE=pathlib.Path(__file__).resolve().parent
 BASE=ROOT/'clusters/unified/public-dns'
@@ -11,7 +11,7 @@ class Component(unittest.TestCase):
   # Compare the configured base with the same base without this one component.
   # Copy its files so normal Kustomize load restrictions remain in effect.
   cls.temp=tempfile.TemporaryDirectory(prefix='.per-site-render-',dir=ROOT/'bootstrap/dns');p=pathlib.Path(cls.temp.name)/'base';shutil.copytree(BASE,p)
-  path=p/'kustomization.yaml';base=yaml.safe_load(path.read_text());assert base.pop('components')==['../../../bootstrap/dns/public-dns-per-site'];path.write_text(yaml.safe_dump(base))
+  path=p/'kustomization.yaml';base=yaml.safe_load(path.read_text());refs=base['components'];target='../../../bootstrap/dns/public-dns-per-site';assert refs.count(target)==1;refs.remove(target);base['components']=[os.path.relpath((BASE/ref).resolve(),p)for ref in refs];path.write_text(yaml.safe_dump(base))
   cls.before=render(p);cls.after=render(BASE)
  @classmethod
  def tearDownClass(cls):cls.temp.cleanup()

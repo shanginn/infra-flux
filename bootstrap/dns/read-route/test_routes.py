@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import re
 import subprocess
+import shutil
 import tempfile
 import unittest
 import yaml
@@ -11,11 +12,24 @@ import yaml
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[2]
 
-def render(base, component=None):
+def render(base, component=None, omit_components=()):
     with tempfile.TemporaryDirectory() as directory:
         path = Path(directory).resolve()
+        source = ROOT / base
+        if omit_components:
+            original = source
+            source = path / 'base'
+            shutil.copytree(original, source)
+            file = source / 'kustomization.yaml'
+            value = yaml.safe_load(file.read_text())
+            refs = value.get('components', [])
+            for ref in omit_components:
+                assert refs.count(ref) == 1
+                refs.remove(ref)
+            value['components'] = [os.path.relpath((original / ref).resolve(), source) for ref in refs]
+            file.write_text(yaml.safe_dump(value))
         config = {'apiVersion':'kustomize.config.k8s.io/v1beta1','kind':'Kustomization',
-                  'resources':[os.path.relpath(ROOT / base,path)]}
+                  'resources':[os.path.relpath(source,path)]}
         if component:
             config['components']=[os.path.relpath(HERE / component,path)]
         (path/'kustomization.yaml').write_text(yaml.safe_dump(config))
@@ -36,8 +50,9 @@ class RouteTests(unittest.TestCase):
         cls.legacy = {site:render('clusters/'+site+'/vibesites-dns','legacy-dnsdist') for site in cls.old}
         cls.proxyold=render('clusters/rubase/vibesites-dns/legacy-api-proxy')
         cls.proxy=cls.proxyold
-        cls.publicold=render('clusters/unified/public-dns')
-        cls.public=render('clusters/unified/public-dns','unified-public')
+        omit=('../../../bootstrap/dns/read-route/public-reader-egress',)
+        cls.publicold=render('clusters/unified/public-dns',omit_components=omit)
+        cls.public=render('clusters/unified/public-dns','unified-public',omit_components=omit)
         cls.contabo=render('bootstrap/dns/read-route/contabo-forwarder')
         cls.zones=set((ROOT/'clusters/unified/dns-authority/zones.txt').read_text().splitlines())
 
@@ -48,6 +63,11 @@ class RouteTests(unittest.TestCase):
                 if path==allowed:
                     self.assertEqual(yaml.safe_load(path.read_text())['components'],
                                      ['../../../../bootstrap/dns/read-route/rubase-proxy'])
+                    continue
+                if path==ROOT/'clusters/unified/public-dns/kustomization.yaml':
+                    self.assertEqual(yaml.safe_load(path.read_text())['components'],
+                                     ['../../../bootstrap/dns/public-dns-per-site',
+                                      '../../../bootstrap/dns/read-route/public-reader-egress'])
                     continue
                 self.assertNotIn('bootstrap/dns/read-route',path.read_text(),str(path))
 

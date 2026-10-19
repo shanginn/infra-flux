@@ -3,6 +3,7 @@ kind: Kustomization
 namespace: public-dns
 components:
   - ../../../bootstrap/dns/public-dns-per-site
+  - ../../../bootstrap/dns/read-route/public-reader-egress
 resources:
   - namespace.yaml
   - rbac.yaml

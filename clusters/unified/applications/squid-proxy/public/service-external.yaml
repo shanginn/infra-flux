@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: squid-proxy-external
+  namespace: squid-proxy
+  labels:
+    app: squid-proxy
+spec:
+  type: ClusterIP
+  externalIPs:
+  - ${SQUID_FIN_PUBLIC_IP}
+  externalTrafficPolicy: Local
+  ports:
+  - port: 31128
+    targetPort: 3128
+    protocol: TCP
+    name: http
+  selector:
+    app: squid-proxy

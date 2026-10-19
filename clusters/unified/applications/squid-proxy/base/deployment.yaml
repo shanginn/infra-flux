@@ -1,0 +1,83 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: squid-proxy
+  namespace: squid-proxy
+  labels:
+    app: squid-proxy
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: squid-proxy
+  template:
+    metadata:
+      labels:
+        app: squid-proxy
+    spec:
+      securityContext:
+        fsGroup: 13
+      containers:
+      - name: squid
+        image: ubuntu/squid@sha256:6a097f68bae708cedbabd6188d68c7e2e7a38cedd05a176e1cc0ba29e3bbe029
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 3128
+          name: http
+          protocol: TCP
+        volumeMounts:
+        - name: squid-config
+          mountPath: /etc/squid/squid.conf
+          subPath: squid.conf
+          readOnly: true
+        - name: squid-auth
+          mountPath: /etc/squid/passwd
+          subPath: passwd
+          readOnly: true
+        - name: squid-cache
+          mountPath: /var/spool/squid
+        - name: squid-logs
+          mountPath: /var/log/squid
+        resources:
+          requests:
+            memory: 256Mi
+            cpu: 100m
+          limits:
+            memory: 512Mi
+            cpu: 500m
+        livenessProbe:
+          tcpSocket:
+            port: 3128
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          tcpSocket:
+            port: 3128
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: false
+          runAsNonRoot: true
+          runAsUser: 13
+          runAsGroup: 13
+          capabilities:
+            drop:
+            - ALL
+      volumes:
+      - name: squid-config
+        configMap:
+          name: squid-config
+      - name: squid-auth
+        secret:
+          secretName: squid-auth
+          defaultMode: 292
+      - name: squid-cache
+        emptyDir:
+          sizeLimit: 1Gi
+      - name: squid-logs
+        emptyDir:
+          sizeLimit: 100Mi
+      nodeSelector:
+        kubernetes.io/hostname: fin
+      automountServiceAccountToken: false

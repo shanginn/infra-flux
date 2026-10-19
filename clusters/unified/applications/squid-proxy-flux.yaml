@@ -1,0 +1,15 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: applications-squid-proxy
+  namespace: flux-system
+spec:
+  interval: 5m
+  retryInterval: 1m
+  timeout: 3m
+  path: ./clusters/unified/applications/squid-proxy/base
+  prune: true
+  wait: true
+  sourceRef:
+    kind: GitRepository
+    name: infra-flux

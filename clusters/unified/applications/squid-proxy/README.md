@@ -1,9 +1,10 @@
 # Squid on Finland
 
-This directory is optional and is not referenced by the applications parent.
-`base` creates a private authenticated proxy on the Finland node. `public`
+The applications parent includes the scoped `applications-squid-proxy` owner.
+It currently selects `base`, a private authenticated proxy on Finland. `public`
 adds port 31128 on the explicitly substituted `SQUID_FIN_PUBLIC_IP` only.
-A scoped Flux owner must require the private substitution ConfigMap; an unset
+Before selecting `public`, the same owner must require the private substitution
+ConfigMap; an unset
 address must fail validation. The Service uses `externalIPs`, not a NodePort.
 Check support when upgrading Kubernetes and test the actual incoming path.
 
@@ -29,4 +30,4 @@ DNS changes. Keep credentials unchanged unless a separate rotation is requested.
 
 The cache and logs are bounded ephemeral volumes. This proxy has one instance on
 Finland; the Moscow node and the old endpoint are not automatic proxy replicas.
-The public overlay is not activated by rendering or committing this directory.
+The public overlay remains inactive until the owner selects its path.

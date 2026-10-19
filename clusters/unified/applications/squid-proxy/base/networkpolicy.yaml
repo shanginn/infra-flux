@@ -11,13 +11,11 @@ spec:
   - Ingress
   - Egress
   ingress:
-  - from: []
-    ports:
+  - ports:
     - protocol: TCP
       port: 3128
   egress:
-  - to: []
-    ports:
+  - ports:
     - protocol: TCP
       port: 80
     - protocol: TCP

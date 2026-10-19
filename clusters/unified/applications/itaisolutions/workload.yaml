@@ -1,0 +1,167 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: itaisolutions
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: itaisolutions
+  namespace: itaisolutions
+automountServiceAccountToken: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: itaisolutions-static-app
+  namespace: itaisolutions
+  labels:
+    app.kubernetes.io/name: itaisolutions-static
+    app.kubernetes.io/instance: itaisolutions-static
+spec:
+  replicas: 1
+  revisionHistoryLimit: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels: &id001
+      app.kubernetes.io/name: itaisolutions-static
+      app.kubernetes.io/instance: itaisolutions-static
+      infra.shanginn.io/replica-site: home
+  template:
+    metadata:
+      labels: *id001
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: home
+      serviceAccountName: itaisolutions
+      automountServiceAccountToken: false
+      imagePullSecrets:
+      - name: dockerconfigjson-github-com
+      terminationGracePeriodSeconds: 30
+      containers:
+      - image: ghcr.io/shanginn/itaisolutions.ru@sha256:c87b669a9eb1e1d291fd5f7993a581068e4c17952a091703dd8969ad88946c4f
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /
+            port: http
+            scheme: HTTP
+          initialDelaySeconds: 15
+          periodSeconds: 20
+          successThreshold: 1
+          timeoutSeconds: 1
+        name: app
+        ports:
+        - containerPort: 80
+          name: http
+          protocol: TCP
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /
+            port: http
+            scheme: HTTP
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 1
+        resources:
+          requests:
+            cpu: 10m
+            memory: 32Mi
+          limits:
+            cpu: 500m
+            memory: 128Mi
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: itaisolutions-static-app
+  namespace: itaisolutions
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: itaisolutions-static
+    app.kubernetes.io/instance: itaisolutions-static
+  ports:
+  - name: http
+    port: 80
+    targetPort: http
+    protocol: TCP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: itaisolutions-static-app-fin
+  namespace: itaisolutions
+  labels:
+    app.kubernetes.io/name: itaisolutions-static
+    app.kubernetes.io/instance: itaisolutions-static
+spec:
+  replicas: 1
+  revisionHistoryLimit: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels: &id001
+      app.kubernetes.io/name: itaisolutions-static
+      app.kubernetes.io/instance: itaisolutions-static
+      infra.shanginn.io/replica-site: fin
+  template:
+    metadata:
+      labels: *id001
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: fin
+      serviceAccountName: itaisolutions
+      automountServiceAccountToken: false
+      imagePullSecrets:
+      - name: dockerconfigjson-github-com
+      terminationGracePeriodSeconds: 30
+      containers:
+      - image: ghcr.io/shanginn/itaisolutions.ru@sha256:c87b669a9eb1e1d291fd5f7993a581068e4c17952a091703dd8969ad88946c4f
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /
+            port: http
+            scheme: HTTP
+          initialDelaySeconds: 15
+          periodSeconds: 20
+          successThreshold: 1
+          timeoutSeconds: 1
+        name: app
+        ports:
+        - containerPort: 80
+          name: http
+          protocol: TCP
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /
+            port: http
+            scheme: HTTP
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 1
+        resources:
+          requests:
+            cpu: 10m
+            memory: 32Mi
+          limits:
+            cpu: 500m
+            memory: 128Mi
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File

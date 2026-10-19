@@ -1,0 +1,20 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: itaisolutions-tls
+  namespace: itaisolutions
+spec:
+  secretName: itaisolutions-tls
+  dnsNames:
+  - itaisolutions.ru
+  issuerRef:
+    group: cert-manager.io
+    kind: ClusterIssuer
+    name: letsencrypt-production
+  privateKey:
+    algorithm: RSA
+    size: 2048
+    rotationPolicy: Always
+  usages:
+  - digital signature
+  - key encipherment

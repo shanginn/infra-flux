@@ -1,0 +1,23 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: itaisolutions-ingress
+  namespace: itaisolutions
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: itaisolutions-static
+      app.kubernetes.io/instance: itaisolutions-static
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: ingress-system
+      podSelector:
+        matchLabels:
+          app.kubernetes.io/name: traefik
+    ports:
+    - protocol: TCP
+      port: 80

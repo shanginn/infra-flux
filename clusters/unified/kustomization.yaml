@@ -14,3 +14,4 @@ resources:
   - error-tracking/public
   - observability
   - observability/logging
+  - applications

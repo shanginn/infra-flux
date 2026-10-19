@@ -3,6 +3,7 @@ import copy
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -20,13 +21,17 @@ ZONES = {
 
 
 def render(component=False):
+    # Build both states from the same real base, independent of its enabled
+    # components, to keep comparing the complete workload and policy delta.
     with tempfile.TemporaryDirectory() as directory:
-        path = Path(directory).resolve()
-        value = {
-            "apiVersion": "kustomize.config.k8s.io/v1beta1",
-            "kind": "Kustomization",
-            "resources": [os.path.relpath(BASE, path)],
-        }
+        path = Path(directory).resolve() / "base"
+        shutil.copytree(BASE, path)
+        value = yaml.safe_load((BASE / "kustomization.yaml").read_text())
+        value.pop("components", None)
+        value["resources"] = [
+            os.path.relpath((BASE / item).resolve(), path)
+            for item in value["resources"]
+        ]
         if component:
             value["components"] = [os.path.relpath(HERE, path)]
         (path / "kustomization.yaml").write_text(yaml.safe_dump(value))
@@ -120,10 +125,14 @@ class ComponentTests(unittest.TestCase):
                          self.before[("NetworkPolicy", "bind-authority")])
         self.assertFalse(any(k[0] == "Secret" for k in self.after))
 
-    def test_component_is_not_activated_by_a_parent(self):
+    def test_only_dns_authority_enables_the_component(self):
+        self.assertEqual(
+            yaml.safe_load((BASE / "kustomization.yaml").read_text())["components"],
+            ["legacy-powerdns-secondary"],
+        )
         for folder in (ROOT / "clusters", ROOT / "bootstrap", ROOT / "components"):
             for path in folder.rglob("kustomization.yaml"):
-                if path.parent == HERE:
+                if path.parent in (HERE, BASE):
                     continue
                 self.assertNotIn("legacy-powerdns-secondary", path.read_text(), str(path))
 

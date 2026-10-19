@@ -1,7 +1,7 @@
-# Optional PowerDNS secondaries
+# PowerDNS secondaries
 
-This component is inactive: no parent references it. It adds persistent BIND
-secondary copies of these three zones from the existing Rubase PowerDNS writer:
+The dns-authority parent enables persistent BIND secondary copies of these
+three zones from the existing Rubase PowerDNS writer:
 
 - `xn--80aaa0aef8ckd2c.xn--p1ai`
 - `xn--80agrjfkbaugg.xn--p1ai`
@@ -53,8 +53,8 @@ and TSIG keys in its [primaries configuration](https://bind9.readthedocs.io/en/v
    using the deployed BIND image. Check the old `legacy-bind` contract as well
    as the new key/list. Reject missing substitutions or mismatched private
    addresses before publication.
-3. Add `legacy-powerdns-secondary` to the dns-authority parent's
-   `components` only after review. Both BIND Pods share this ConfigMap and
+3. The dns-authority parent includes `legacy-powerdns-secondary` in
+   `components`. Keep its private dependencies available before reconciliation. Both BIND Pods share this ConfigMap and
    Secret; their existing supervisor validates changes and reloads named.
    This is a shared reload, not a one-site-at-a-time rollout.
 4. Check successful signed AXFR on both sites, then compare all three zones'

@@ -14,3 +14,5 @@ configMapGenerator:
     options:
       disableNameSuffixHash: true
     files: [named.conf, named.conf.zones, zones.txt, readiness.sh, run.sh]
+components:
+  - legacy-powerdns-secondary

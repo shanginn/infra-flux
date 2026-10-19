@@ -24,10 +24,10 @@ class StaticSiteConfig(unittest.TestCase):
     def test_base_contains_workload_and_route_without_credentials(self):
         self.assertCountEqual([x["kind"] for x in self.objects], [
             "Namespace", "ServiceAccount", "Service", "Deployment",
-            "Deployment", "NetworkPolicy", "Middleware", "Ingress", "Ingress",
+            "Deployment", "NetworkPolicy", "Middleware", "Ingress", "Ingress", "Certificate",
         ])
         for obj in self.objects:
-            self.assertNotIn(obj["kind"], {"Secret", "Certificate"})
+            self.assertNotEqual(obj["kind"], "Secret")
 
     def test_both_sites_use_same_pinned_stateless_image(self):
         self.assertEqual(len(self.deployments), 2)
@@ -69,9 +69,9 @@ class StaticSiteConfig(unittest.TestCase):
         for obj in self.deployments:
             self.assertTrue(all(obj["spec"]["template"]["metadata"]["labels"].get(k) == v for k, v in policy["podSelector"]["matchLabels"].items()))
 
-    def test_owner_is_scoped_and_renewal_excluded_until_dns_cutover(self):
+    def test_owner_is_scoped_and_includes_renewal(self):
         base = yaml.safe_load((HERE / "kustomization.yaml").read_text())
-        self.assertEqual(base["resources"], ["workload.yaml", "network-policy.yaml", "public-route.yaml"])
+        self.assertEqual(base["resources"], ["workload.yaml", "network-policy.yaml", "public-route.yaml", "certificate.yaml"])
         parent = yaml.safe_load((HERE.parent / "kustomization.yaml").read_text())
         self.assertEqual(parent["resources"], ["flux.yaml"])
         owner = yaml.safe_load((HERE.parent / "flux.yaml").read_text())
@@ -91,8 +91,11 @@ class StaticSiteConfig(unittest.TestCase):
             self.assertEqual(obj["spec"]["ingressClassName"], "traefik")
             self.assertEqual(obj["spec"]["rules"], [{"host": "itaisolutions.ru", "http": {"paths": [{"path": "/", "pathType": "Prefix", "backend": {"service": {"name": "itaisolutions-static-app", "port": {"name": "http"}}}}]}}])
         certificate = yaml.safe_load((HERE / "certificate.yaml").read_text())
+        self.assertEqual(certificate["metadata"], {"name": "itaisolutions-tls", "namespace": "itaisolutions"})
+        self.assertEqual(certificate["spec"]["secretName"], "itaisolutions-tls")
         self.assertEqual(certificate["spec"]["dnsNames"], ["itaisolutions.ru"])
         self.assertEqual(certificate["spec"]["issuerRef"]["name"], "letsencrypt-production")
+        self.assertEqual(certificate["spec"]["privateKey"], {"algorithm": "RSA", "size": 2048, "rotationPolicy": "Always"})
 
 
 if __name__ == "__main__":

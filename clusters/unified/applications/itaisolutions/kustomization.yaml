@@ -4,3 +4,4 @@ resources:
   - workload.yaml
   - network-policy.yaml
   - public-route.yaml
+  - certificate.yaml

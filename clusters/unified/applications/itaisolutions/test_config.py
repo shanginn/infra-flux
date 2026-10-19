@@ -21,13 +21,13 @@ class StaticSiteConfig(unittest.TestCase):
         cls.objects = list(yaml.safe_load_all(rendered))
         cls.deployments = [x for x in cls.objects if x["kind"] == "Deployment"]
 
-    def test_base_contains_only_private_workload_resources(self):
+    def test_base_contains_workload_and_route_without_credentials(self):
         self.assertCountEqual([x["kind"] for x in self.objects], [
             "Namespace", "ServiceAccount", "Service", "Deployment",
-            "Deployment", "NetworkPolicy",
+            "Deployment", "NetworkPolicy", "Middleware", "Ingress", "Ingress",
         ])
         for obj in self.objects:
-            self.assertNotIn(obj["kind"], {"Secret", "Ingress", "Certificate", "Middleware"})
+            self.assertNotIn(obj["kind"], {"Secret", "Certificate"})
 
     def test_both_sites_use_same_pinned_stateless_image(self):
         self.assertEqual(len(self.deployments), 2)
@@ -69,9 +69,9 @@ class StaticSiteConfig(unittest.TestCase):
         for obj in self.deployments:
             self.assertTrue(all(obj["spec"]["template"]["metadata"]["labels"].get(k) == v for k, v in policy["podSelector"]["matchLabels"].items()))
 
-    def test_owner_is_scoped_and_public_route_excluded(self):
+    def test_owner_is_scoped_and_renewal_excluded_until_dns_cutover(self):
         base = yaml.safe_load((HERE / "kustomization.yaml").read_text())
-        self.assertEqual(base["resources"], ["workload.yaml", "network-policy.yaml"])
+        self.assertEqual(base["resources"], ["workload.yaml", "network-policy.yaml", "public-route.yaml"])
         parent = yaml.safe_load((HERE.parent / "kustomization.yaml").read_text())
         self.assertEqual(parent["resources"], ["flux.yaml"])
         owner = yaml.safe_load((HERE.parent / "flux.yaml").read_text())

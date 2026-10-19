@@ -1,6 +1,6 @@
 $TTL 24H
 @     IN  SOA @       hostmaster.itaisolutions.ru. (
-  2026101801   ; serial
+  2026101901   ; serial
   3H  ; refresh
   1H  ; retry
   1W  ; expire
@@ -13,7 +13,7 @@ $TTL 24H
 @     IN  NS          ns4.shanginn.io.
 
 ; Map the domain to an IP address
-@     IN  A           185.221.212.224
+@     IN  A           157.228.139.163
 
 ; Map 'www' and 'mail' subdomains to the same IP address
 www   IN  A           185.221.212.224

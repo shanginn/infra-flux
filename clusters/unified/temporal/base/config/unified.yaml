@@ -1,0 +1,90 @@
+# enable-template
+# Native Temporal template rendering keeps credentials in memory.
+log:
+  stdout: true
+  level: "debug,info"
+persistence:
+  defaultStore: default
+  visibilityStore: visibility
+  numHistoryShards: 512
+  datastores:
+    default:
+      sql:
+        pluginName: postgres12
+        databaseName: temporal
+        connectAddr: unified-postgres.database.svc.cluster.local:5432
+        connectProtocol: tcp
+        user: temporal_user
+        password: {{ env "TEMPORAL_STORE_PASSWORD" | toJson }}
+        maxConns: 8
+        maxIdleConns: 2
+        maxConnLifetime: 1h
+    visibility:
+      sql:
+        pluginName: postgres12
+        databaseName: temporal_visibility
+        connectAddr: unified-postgres.database.svc.cluster.local:5432
+        connectProtocol: tcp
+        user: temporal_user
+        password: {{ env "TEMPORAL_VISIBILITY_STORE_PASSWORD" | toJson }}
+        maxConns: 8
+        maxIdleConns: 2
+        maxConnLifetime: 1h
+global:
+  membership:
+    maxJoinDuration: 30s
+    broadcastAddress: {{ env "POD_IP" | toJson }}
+  pprof:
+    port: 7936
+  metrics:
+    tags:
+      type: {{ env "TEMPORAL_SERVICE" | toJson }}
+    prometheus:
+      timerType: histogram
+      listenAddress: "0.0.0.0:9090"
+services:
+  frontend:
+    rpc:
+      grpcPort: 7233
+      membershipPort: 6933
+      bindOnIP: "0.0.0.0"
+  history:
+    rpc:
+      grpcPort: 7234
+      membershipPort: 6934
+      bindOnIP: "0.0.0.0"
+  matching:
+    rpc:
+      grpcPort: 7235
+      membershipPort: 6935
+      bindOnIP: "0.0.0.0"
+  worker:
+    rpc:
+      grpcPort: 7239
+      membershipPort: 6939
+      bindOnIP: "0.0.0.0"
+clusterMetadata:
+  enableGlobalNamespace: false
+  failoverVersionIncrement: 10
+  masterClusterName: active
+  currentClusterName: active
+  clusterInformation:
+    active:
+      enabled: true
+      initialFailoverVersion: 1
+      rpcName: temporal-frontend
+      rpcAddress: temporal-frontend.temporal-system.svc.cluster.local:7233
+dcRedirectionPolicy:
+  policy: noop
+archival:
+  history:
+    state: disabled
+    enableRead: false
+  visibility:
+    state: disabled
+    enableRead: false
+publicClient:
+  hostPort: temporal-frontend.temporal-system.svc.cluster.local:7233
+dynamicConfigClient:
+  filepath: /etc/temporal/dynamic_config/dynamic_config.yaml
+  pollInterval: 10s

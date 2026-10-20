@@ -1,0 +1,71 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: temporal-internal
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: temporal
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: temporal
+      ports:
+        - {protocol: TCP, port: 7233}
+        - {protocol: TCP, port: 7234}
+        - {protocol: TCP, port: 7235}
+        - {protocol: TCP, port: 7239}
+        - {protocol: TCP, port: 6933}
+        - {protocol: TCP, port: 6934}
+        - {protocol: TCP, port: 6935}
+        - {protocol: TCP, port: 6939}
+        - {protocol: UDP, port: 6933}
+        - {protocol: UDP, port: 6934}
+        - {protocol: UDP, port: 6935}
+        - {protocol: UDP, port: 6939}
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - {protocol: TCP, port: 9090}
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: temporal
+      ports:
+        - {protocol: TCP, port: 7233}
+        - {protocol: TCP, port: 7234}
+        - {protocol: TCP, port: 7235}
+        - {protocol: TCP, port: 7239}
+        - {protocol: TCP, port: 6933}
+        - {protocol: TCP, port: 6934}
+        - {protocol: TCP, port: 6935}
+        - {protocol: TCP, port: 6939}
+        - {protocol: UDP, port: 6933}
+        - {protocol: UDP, port: 6934}
+        - {protocol: UDP, port: 6935}
+        - {protocol: UDP, port: 6939}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: database
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: patroni
+              cluster-name: unified-postgres
+      ports:
+        - {protocol: TCP, port: 5432}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - {protocol: TCP, port: 53}
+        - {protocol: UDP, port: 53}

@@ -1,0 +1,495 @@
+# Inactive until the final persistence and caller handover receipts pass.
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: temporal-frontend
+spec:
+  replicas: 0
+  revisionHistoryLimit: 2
+  minReadySeconds: 10
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: temporal
+      app.kubernetes.io/component: frontend
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: temporal
+        app.kubernetes.io/component: frontend
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: home
+      serviceAccountName: temporal
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 60
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: temporal
+        image: docker.io/temporalio/server@sha256:465833b37daee69d90cbff8f855e8f3c96e342087405e61131d4930213feceb4
+        imagePullPolicy: IfNotPresent
+        command:
+        - "/usr/local/bin/temporal-server"
+        args:
+        - "--root"
+        - "/"
+        - "--config"
+        - "/etc/temporal/config"
+        - "--env"
+        - unified
+        - "--allow-no-auth"
+        - start
+        - "--service"
+        - frontend
+        env:
+        - name: POD_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        - name: TEMPORAL_SERVICE
+          value: frontend
+        - name: TEMPORAL_STORE_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: temporal-default-store
+              key: password
+        - name: TEMPORAL_VISIBILITY_STORE_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: temporal-visibility-store
+              key: password
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 65534
+          runAsGroup: 65534
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+        ports:
+        - name: grpc
+          containerPort: 7233
+        - name: membership-tcp
+          containerPort: 6933
+          protocol: TCP
+        - name: membership-udp
+          containerPort: 6933
+          protocol: UDP
+        - name: metrics
+          containerPort: 9090
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: '2'
+            memory: 1Gi
+        startupProbe:
+          tcpSocket:
+            port: grpc
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 60
+        readinessProbe:
+          tcpSocket:
+            port: grpc
+          periodSeconds: 10
+          timeoutSeconds: 3
+          failureThreshold: 3
+        volumeMounts:
+        - name: config
+          mountPath: "/etc/temporal/config"
+          readOnly: true
+        - name: dynamic-config
+          mountPath: "/etc/temporal/dynamic_config"
+          readOnly: true
+        - name: tmp
+          mountPath: "/tmp"
+      volumes:
+      - name: config
+        configMap:
+          name: temporal-config
+      - name: dynamic-config
+        configMap:
+          name: temporal-dynamic-config
+      - name: tmp
+        emptyDir:
+          medium: Memory
+          sizeLimit: 64Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: temporal-history
+spec:
+  replicas: 0
+  revisionHistoryLimit: 2
+  minReadySeconds: 10
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: temporal
+      app.kubernetes.io/component: history
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: temporal
+        app.kubernetes.io/component: history
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: home
+      serviceAccountName: temporal
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 60
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: temporal
+        image: docker.io/temporalio/server@sha256:465833b37daee69d90cbff8f855e8f3c96e342087405e61131d4930213feceb4
+        imagePullPolicy: IfNotPresent
+        command:
+        - "/usr/local/bin/temporal-server"
+        args:
+        - "--root"
+        - "/"
+        - "--config"
+        - "/etc/temporal/config"
+        - "--env"
+        - unified
+        - "--allow-no-auth"
+        - start
+        - "--service"
+        - history
+        env:
+        - name: POD_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        - name: TEMPORAL_SERVICE
+          value: history
+        - name: TEMPORAL_STORE_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: temporal-default-store
+              key: password
+        - name: TEMPORAL_VISIBILITY_STORE_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: temporal-visibility-store
+              key: password
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 65534
+          runAsGroup: 65534
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+        ports:
+        - name: grpc
+          containerPort: 7234
+        - name: membership-tcp
+          containerPort: 6934
+          protocol: TCP
+        - name: membership-udp
+          containerPort: 6934
+          protocol: UDP
+        - name: metrics
+          containerPort: 9090
+        resources:
+          requests:
+            cpu: 500m
+            memory: 1Gi
+          limits:
+            cpu: '4'
+            memory: 4Gi
+        startupProbe:
+          tcpSocket:
+            port: grpc
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 60
+        readinessProbe:
+          tcpSocket:
+            port: grpc
+          periodSeconds: 10
+          timeoutSeconds: 3
+          failureThreshold: 3
+        volumeMounts:
+        - name: config
+          mountPath: "/etc/temporal/config"
+          readOnly: true
+        - name: dynamic-config
+          mountPath: "/etc/temporal/dynamic_config"
+          readOnly: true
+        - name: tmp
+          mountPath: "/tmp"
+      volumes:
+      - name: config
+        configMap:
+          name: temporal-config
+      - name: dynamic-config
+        configMap:
+          name: temporal-dynamic-config
+      - name: tmp
+        emptyDir:
+          medium: Memory
+          sizeLimit: 64Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: temporal-matching
+spec:
+  replicas: 0
+  revisionHistoryLimit: 2
+  minReadySeconds: 10
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: temporal
+      app.kubernetes.io/component: matching
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: temporal
+        app.kubernetes.io/component: matching
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: home
+      serviceAccountName: temporal
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 60
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: temporal
+        image: docker.io/temporalio/server@sha256:465833b37daee69d90cbff8f855e8f3c96e342087405e61131d4930213feceb4
+        imagePullPolicy: IfNotPresent
+        command:
+        - "/usr/local/bin/temporal-server"
+        args:
+        - "--root"
+        - "/"
+        - "--config"
+        - "/etc/temporal/config"
+        - "--env"
+        - unified
+        - "--allow-no-auth"
+        - start
+        - "--service"
+        - matching
+        env:
+        - name: POD_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        - name: TEMPORAL_SERVICE
+          value: matching
+        - name: TEMPORAL_STORE_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: temporal-default-store
+              key: password
+        - name: TEMPORAL_VISIBILITY_STORE_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: temporal-visibility-store
+              key: password
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 65534
+          runAsGroup: 65534
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+        ports:
+        - name: grpc
+          containerPort: 7235
+        - name: membership-tcp
+          containerPort: 6935
+          protocol: TCP
+        - name: membership-udp
+          containerPort: 6935
+          protocol: UDP
+        - name: metrics
+          containerPort: 9090
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: '2'
+            memory: 1Gi
+        startupProbe:
+          tcpSocket:
+            port: grpc
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 60
+        readinessProbe:
+          tcpSocket:
+            port: grpc
+          periodSeconds: 10
+          timeoutSeconds: 3
+          failureThreshold: 3
+        volumeMounts:
+        - name: config
+          mountPath: "/etc/temporal/config"
+          readOnly: true
+        - name: dynamic-config
+          mountPath: "/etc/temporal/dynamic_config"
+          readOnly: true
+        - name: tmp
+          mountPath: "/tmp"
+      volumes:
+      - name: config
+        configMap:
+          name: temporal-config
+      - name: dynamic-config
+        configMap:
+          name: temporal-dynamic-config
+      - name: tmp
+        emptyDir:
+          medium: Memory
+          sizeLimit: 64Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: temporal-worker
+spec:
+  replicas: 0
+  revisionHistoryLimit: 2
+  minReadySeconds: 10
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: temporal
+      app.kubernetes.io/component: worker
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: temporal
+        app.kubernetes.io/component: worker
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: home
+      serviceAccountName: temporal
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 60
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: temporal
+        image: docker.io/temporalio/server@sha256:465833b37daee69d90cbff8f855e8f3c96e342087405e61131d4930213feceb4
+        imagePullPolicy: IfNotPresent
+        command:
+        - "/usr/local/bin/temporal-server"
+        args:
+        - "--root"
+        - "/"
+        - "--config"
+        - "/etc/temporal/config"
+        - "--env"
+        - unified
+        - "--allow-no-auth"
+        - start
+        - "--service"
+        - worker
+        env:
+        - name: POD_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        - name: TEMPORAL_SERVICE
+          value: worker
+        - name: TEMPORAL_STORE_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: temporal-default-store
+              key: password
+        - name: TEMPORAL_VISIBILITY_STORE_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: temporal-visibility-store
+              key: password
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 65534
+          runAsGroup: 65534
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+        ports:
+        - name: grpc
+          containerPort: 7239
+        - name: membership-tcp
+          containerPort: 6939
+          protocol: TCP
+        - name: membership-udp
+          containerPort: 6939
+          protocol: UDP
+        - name: metrics
+          containerPort: 9090
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: '2'
+            memory: 1Gi
+        startupProbe:
+          httpGet:
+            path: "/metrics"
+            port: metrics
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 60
+        readinessProbe:
+          httpGet:
+            path: "/metrics"
+            port: metrics
+          periodSeconds: 10
+          timeoutSeconds: 3
+          failureThreshold: 3
+        volumeMounts:
+        - name: config
+          mountPath: "/etc/temporal/config"
+          readOnly: true
+        - name: dynamic-config
+          mountPath: "/etc/temporal/dynamic_config"
+          readOnly: true
+        - name: tmp
+          mountPath: "/tmp"
+      volumes:
+      - name: config
+        configMap:
+          name: temporal-config
+      - name: dynamic-config
+        configMap:
+          name: temporal-dynamic-config
+      - name: tmp
+        emptyDir:
+          medium: Memory
+          sizeLimit: 64Mi

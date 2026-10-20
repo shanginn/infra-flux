@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: temporal-system
+  labels:
+    infra.shanginn.io/postgresql-client: "true"
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: temporal
+automountServiceAccountToken: false

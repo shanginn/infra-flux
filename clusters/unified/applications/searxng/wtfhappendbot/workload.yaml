@@ -1,0 +1,128 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: wtfhappendbot
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: wtf-happend-bot-searxng
+  namespace: wtfhappendbot
+automountServiceAccountToken: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wtf-happend-bot-searxng
+  namespace: wtfhappendbot
+spec:
+  replicas: 1
+  revisionHistoryLimit: 3
+  minReadySeconds: 10
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: app
+      app.kubernetes.io/instance: wtf-happend-bot
+      service: searxng
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: app
+        app.kubernetes.io/instance: wtf-happend-bot
+        service: searxng
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: fin
+      serviceAccountName: wtf-happend-bot-searxng
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: searxng
+        image: docker.io/searxng/searxng@sha256:35b089054ac9b4257976107e71673d9e30ac17c9b50bbf8b4783f2f6d1d1981f
+        imagePullPolicy: IfNotPresent
+        securityContext:
+          allowPrivilegeEscalation: false
+        ports:
+        - name: http
+          containerPort: 8080
+          protocol: TCP
+        env:
+          - name: SEARXNG_BASE_URL
+            valueFrom:
+              secretKeyRef:
+                name: wtf-happend-bot-searxng-runtime
+                key: SEARXNG_BASE_URL
+          - name: FORCE_OWNERSHIP
+            valueFrom:
+              secretKeyRef:
+                name: wtf-happend-bot-searxng-runtime
+                key: FORCE_OWNERSHIP
+          - name: SEARXNG_SECRET
+            valueFrom:
+              secretKeyRef:
+                name: wtf-happend-bot-searxng-runtime
+                key: SEARXNG_SECRET
+        volumeMounts:
+        - name: settings
+          mountPath: /etc/searxng/settings.yml
+          subPath: settings.yml
+          readOnly: true
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: '1'
+            memory: 768Mi
+        startupProbe:
+          httpGet:
+            path: /
+            port: http
+          failureThreshold: 60
+          periodSeconds: 5
+          timeoutSeconds: 3
+        readinessProbe:
+          httpGet:
+            path: /
+            port: http
+          periodSeconds: 10
+          timeoutSeconds: 3
+        livenessProbe:
+          httpGet:
+            path: /
+            port: http
+          periodSeconds: 30
+          timeoutSeconds: 5
+          failureThreshold: 3
+      volumes:
+      - name: settings
+        secret:
+          secretName: wtf-happend-bot-searxng-runtime
+          items:
+          - key: settings.yml
+            path: settings.yml
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: wtf-happend-bot-searxng
+  namespace: wtfhappendbot
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: app
+    app.kubernetes.io/instance: wtf-happend-bot
+    service: searxng
+  ports:
+  - name: http
+    port: 8080
+    targetPort: http
+    protocol: TCP

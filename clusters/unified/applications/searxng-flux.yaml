@@ -1,0 +1,31 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: applications-searxng-mrcatcha
+  namespace: flux-system
+spec:
+  interval: 5m
+  retryInterval: 1m
+  timeout: 5m
+  path: ./clusters/unified/applications/searxng/mrcatcha
+  prune: true
+  wait: true
+  sourceRef:
+    kind: GitRepository
+    name: infra-flux
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: applications-searxng-wtfhappendbot
+  namespace: flux-system
+spec:
+  interval: 5m
+  retryInterval: 1m
+  timeout: 5m
+  path: ./clusters/unified/applications/searxng/wtfhappendbot
+  prune: true
+  wait: true
+  sourceRef:
+    kind: GitRepository
+    name: infra-flux

@@ -28,6 +28,16 @@ up to 64 connections, before administrative or other application connections.
 Check actual shared PostgreSQL headroom and load before activation. Do not
 change the database's primary merely to match placement preference.
 
+Both SQL stores require TLS with certificate and hostname verification. Provision
+the public PostgreSQL CA in the `temporal-system/postgres-ca` ConfigMap, key
+`ca.crt`, before creating Pods. Copy only the CA certificate from the current
+database trust configuration; no server private key belongs in this namespace.
+Refresh that ConfigMap when the database CA rotates. The native 1.28.4 PostgreSQL
+driver otherwise defaults to `sslmode=disable`, which the target rejects.
+
+Set `USER=temporal` explicitly for the unprivileged server process. Configuration
+parsing alone does not exercise the native process-user lookup at startup.
+
 The cluster remains named `active`, with initial failover version 1 and increment
 10. The source's obsolete global-domain key is represented by the native
 `enableGlobalNamespace: false` setting. The cluster RPC address is changed to the

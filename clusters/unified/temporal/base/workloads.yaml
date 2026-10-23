@@ -51,6 +51,8 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: status.podIP
+        - name: USER
+          value: temporal
         - name: TEMPORAL_SERVICE
           value: frontend
         - name: TEMPORAL_STORE_PASSWORD
@@ -109,6 +111,9 @@ spec:
         - name: dynamic-config
           mountPath: "/etc/temporal/dynamic_config"
           readOnly: true
+        - name: postgres-ca
+          mountPath: "/etc/postgres-ca"
+          readOnly: true
         - name: tmp
           mountPath: "/tmp"
       volumes:
@@ -118,6 +123,10 @@ spec:
       - name: dynamic-config
         configMap:
           name: temporal-dynamic-config
+      - name: postgres-ca
+        configMap:
+          name: postgres-ca
+          defaultMode: 0444
       - name: tmp
         emptyDir:
           medium: Memory
@@ -174,6 +183,8 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: status.podIP
+        - name: USER
+          value: temporal
         - name: TEMPORAL_SERVICE
           value: history
         - name: TEMPORAL_STORE_PASSWORD
@@ -232,6 +243,9 @@ spec:
         - name: dynamic-config
           mountPath: "/etc/temporal/dynamic_config"
           readOnly: true
+        - name: postgres-ca
+          mountPath: "/etc/postgres-ca"
+          readOnly: true
         - name: tmp
           mountPath: "/tmp"
       volumes:
@@ -241,6 +255,10 @@ spec:
       - name: dynamic-config
         configMap:
           name: temporal-dynamic-config
+      - name: postgres-ca
+        configMap:
+          name: postgres-ca
+          defaultMode: 0444
       - name: tmp
         emptyDir:
           medium: Memory
@@ -297,6 +315,8 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: status.podIP
+        - name: USER
+          value: temporal
         - name: TEMPORAL_SERVICE
           value: matching
         - name: TEMPORAL_STORE_PASSWORD
@@ -355,6 +375,9 @@ spec:
         - name: dynamic-config
           mountPath: "/etc/temporal/dynamic_config"
           readOnly: true
+        - name: postgres-ca
+          mountPath: "/etc/postgres-ca"
+          readOnly: true
         - name: tmp
           mountPath: "/tmp"
       volumes:
@@ -364,6 +387,10 @@ spec:
       - name: dynamic-config
         configMap:
           name: temporal-dynamic-config
+      - name: postgres-ca
+        configMap:
+          name: postgres-ca
+          defaultMode: 0444
       - name: tmp
         emptyDir:
           medium: Memory
@@ -420,6 +447,8 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: status.podIP
+        - name: USER
+          value: temporal
         - name: TEMPORAL_SERVICE
           value: worker
         - name: TEMPORAL_STORE_PASSWORD
@@ -480,6 +509,9 @@ spec:
         - name: dynamic-config
           mountPath: "/etc/temporal/dynamic_config"
           readOnly: true
+        - name: postgres-ca
+          mountPath: "/etc/postgres-ca"
+          readOnly: true
         - name: tmp
           mountPath: "/tmp"
       volumes:
@@ -489,6 +521,10 @@ spec:
       - name: dynamic-config
         configMap:
           name: temporal-dynamic-config
+      - name: postgres-ca
+        configMap:
+          name: postgres-ca
+          defaultMode: 0444
       - name: tmp
         emptyDir:
           medium: Memory

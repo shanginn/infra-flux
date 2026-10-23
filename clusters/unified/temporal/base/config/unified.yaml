@@ -16,6 +16,10 @@ persistence:
         connectProtocol: tcp
         user: temporal_user
         password: {{ env "TEMPORAL_STORE_PASSWORD" | toJson }}
+        tls:
+          enabled: true
+          enableHostVerification: true
+          caFile: /etc/postgres-ca/ca.crt
         maxConns: 8
         maxIdleConns: 2
         maxConnLifetime: 1h
@@ -27,6 +31,10 @@ persistence:
         connectProtocol: tcp
         user: temporal_user
         password: {{ env "TEMPORAL_VISIBILITY_STORE_PASSWORD" | toJson }}
+        tls:
+          enabled: true
+          enableHostVerification: true
+          caFile: /etc/postgres-ca/ca.crt
         maxConns: 8
         maxIdleConns: 2
         maxConnLifetime: 1h

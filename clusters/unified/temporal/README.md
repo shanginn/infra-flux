@@ -50,13 +50,37 @@ budgets that still need runtime validation.
 
 ## Before any activation
 
+Finish target preparation before taking the final synchronized data. Prepare
+and test the pinned images, configuration, credentials, storage, caller network
+policies, routes, startup migration hooks, delta application and acceptance
+checks first. Include release controllers and CI reconcilers in the producer
+handover plan; scaling an application's main Deployment alone may not stop them
+from restoring old workloads. Keep target consumers inactive during preparation.
+
+Treat existing copies as baselines. Compare current source and target schemas,
+complete row content and sequence state; equal sequence values or increasing
+IDs do not establish freshness. File deltas must include updates, deletions,
+renames, links and metadata changes. Rehearse the delta application and complete
+parity checks before the source interruption. Preserve completed baselines and
+failed operation journals. An interrupted transfer is not permission to retry it.
+
+Once these preparations pass, refresh the actual source image digests and
+application/database/namespace bindings. Coordinate the source producers, apply
+the final changes, verify parity and replica replay, and switch immediately to
+the prepared target. Do not put image builds, storage setup or migration-tool
+development between final synchronization and the client switch. If preparation
+or source bindings change, revalidate them before entering this final phase.
+
 1. Restore both existing archived databases into an isolated, externally blocked
    fixture. Verify complete table/sequence/catalog coverage before starting the
    exact server image, then validate namespaces and existing workflow state.
    A historical observational pair is not a final consistent migration pair.
-2. Prepare the complete final cutover: coordinate source Temporal writers and
-   application producers, capture the final persistence pair and application
-   changes, and validate restoration. Measure the write interruption.
+   Reuse completed rehearsal receipts for the scope they prove; do not repeat a
+   completed import merely to refresh that proof.
+2. Rehearse the complete cutover before the final synchronization. A freshly
+   coordinated native Temporal persistence pair may be the smallest safe
+   complete data unit; freshly measure and validate it rather than recopying
+   every application database by default. Measure the write interruption.
 3. Preserve the original cluster and namespace identities, review the empty
    duplicate namespace's disposition, and prevent the copied server's membership
    or workers from contacting the still-active source.

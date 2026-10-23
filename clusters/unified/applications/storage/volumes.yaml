@@ -1,0 +1,123 @@
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: unified-apps-local
+provisioner: kubernetes.io/no-provisioner
+volumeBindingMode: WaitForFirstConsumer
+reclaimPolicy: Retain
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: sistent-uploads-home
+spec:
+  capacity: {storage: 20Gi}
+  volumeMode: Filesystem
+  accessModes: [ReadWriteOnce]
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: unified-apps-local
+  local: {path: /var/lib/infra-apps/sistent/uploads}
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - {key: kubernetes.io/hostname, operator: In, values: [home]}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: app-uploads
+  namespace: sistent
+spec:
+  accessModes: [ReadWriteOnce]
+  volumeMode: Filesystem
+  storageClassName: unified-apps-local
+  volumeName: sistent-uploads-home
+  resources: {requests: {storage: 20Gi}}
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: generach-persistence-home
+spec:
+  capacity: {storage: 5Gi}
+  volumeMode: Filesystem
+  accessModes: [ReadWriteOnce]
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: unified-apps-local
+  local: {path: /var/lib/infra-apps/generach/persistence}
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - {key: kubernetes.io/hostname, operator: In, values: [home]}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: python-bot-pvc
+  namespace: generach
+spec:
+  accessModes: [ReadWriteOnce]
+  volumeMode: Filesystem
+  storageClassName: unified-apps-local
+  volumeName: generach-persistence-home
+  resources: {requests: {storage: 5Gi}}
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: contabo-redis-home
+spec:
+  capacity: {storage: 8Gi}
+  volumeMode: Filesystem
+  accessModes: [ReadWriteOnce]
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: unified-apps-local
+  local: {path: /var/lib/infra-apps/redis/main}
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - {key: kubernetes.io/hostname, operator: In, values: [home]}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: redis-data
+  namespace: redis
+spec:
+  accessModes: [ReadWriteOnce]
+  volumeMode: Filesystem
+  storageClassName: unified-apps-local
+  volumeName: contabo-redis-home
+  resources: {requests: {storage: 8Gi}}
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: contabo-dragonfly-home
+spec:
+  capacity: {storage: 12Gi}
+  volumeMode: Filesystem
+  accessModes: [ReadWriteOnce]
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: unified-apps-local
+  local: {path: /var/lib/infra-apps/redis/dragonfly}
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - {key: kubernetes.io/hostname, operator: In, values: [home]}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: dragonfly-data
+  namespace: redis
+spec:
+  accessModes: [ReadWriteOnce]
+  volumeMode: Filesystem
+  storageClassName: unified-apps-local
+  volumeName: contabo-dragonfly-home
+  resources: {requests: {storage: 12Gi}}

@@ -52,6 +52,7 @@ spec:
             - {name: generach-tls, mountPath: /etc/app-edge/tls/generach, readOnly: true}
             - {name: inswapper-tls, mountPath: /etc/app-edge/tls/inswapper, readOnly: true}
             - {name: inswapper-client-ca, mountPath: /etc/app-edge/client-ca, readOnly: true}
+            - {name: legacy-proxy-identity, mountPath: /etc/app-edge/legacy, readOnly: true}
       volumes:
         - name: config
           configMap: {name: app-edge-nginx}
@@ -69,6 +70,8 @@ spec:
           secret: {secretName: edge-inswapper-tls, defaultMode: 0440}
         - name: inswapper-client-ca
           secret: {secretName: edge-inswapper-client-ca, defaultMode: 0440}
+        - name: legacy-proxy-identity
+          configMap: {name: app-edge-legacy-proxy}
 ---
 apiVersion: v1
 kind: Service

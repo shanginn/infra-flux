@@ -1,0 +1,46 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: phenogram-public-edge
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/name: phenogram-public-edge}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: ingress-system}
+          podSelector:
+            matchLabels: {app.kubernetes.io/name: traefik}
+      ports: [{protocol: TCP, port: 8443}]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: kube-system}
+          podSelector:
+            matchLabels: {k8s-app: kube-dns}
+      ports: [{protocol: UDP, port: 53}, {protocol: TCP, port: 53}]
+    - to:
+        - podSelector:
+            matchLabels: {app.kubernetes.io/component: app, app.kubernetes.io/instance: phenogram}
+        - podSelector:
+            matchLabels: {app.kubernetes.io/component: data-plane-gateway, app.kubernetes.io/instance: phenogram}
+      ports: [{protocol: TCP, port: 8080}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: phenogram-application-from-public-edge
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/name: phenogram-platform, app.kubernetes.io/instance: phenogram}
+    matchExpressions:
+      - key: app.kubernetes.io/component
+        operator: In
+        values: [app, data-plane-gateway]
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: {app.kubernetes.io/name: phenogram-public-edge}
+      ports: [{protocol: TCP, port: 8080}]

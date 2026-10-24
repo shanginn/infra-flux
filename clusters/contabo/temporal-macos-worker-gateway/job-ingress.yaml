@@ -18,6 +18,9 @@ metadata:
     nginx.ingress.kubernetes.io/proxy-ssl-name: inswapper.generach.ru
     nginx.ingress.kubernetes.io/proxy-ssl-protocols: TLSv1.3
     nginx.ingress.kubernetes.io/upstream-vhost: inswapper.generach.ru
+    nginx.ingress.kubernetes.io/service-upstream: "true"
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      proxy_ssl_session_reuse off;
 spec:
   ingressClassName: nginx
   tls:

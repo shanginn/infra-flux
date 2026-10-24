@@ -4,3 +4,4 @@ resources:
   - gateway.yaml
   - job-client-ca.yaml
   - job-ingress.yaml
+  - job-upstream.yaml

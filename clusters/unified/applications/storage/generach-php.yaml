@@ -1,0 +1,52 @@
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: generach-php-storage-home
+spec:
+  capacity: {storage: 4Gi}
+  volumeMode: Filesystem
+  accessModes: [ReadWriteOnce]
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: unified-apps-local
+  local: {path: /var/lib/infra-apps/generach/php-storage}
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - {key: kubernetes.io/hostname, operator: In, values: [home]}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: php-runtime-data
+  namespace: generach
+spec:
+  accessModes: [ReadWriteOnce]
+  volumeMode: Filesystem
+  storageClassName: unified-apps-local
+  volumeName: generach-php-storage-home
+  resources: {requests: {storage: 4Gi}}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: php-storage-layout-v1
+  namespace: generach
+immutable: true
+data:
+  seed-storage.sh: |
+    #!/bin/sh
+    set -eu
+    umask 027
+    case "$1" in
+      api) root=/state/api ;;
+      worker)
+        test "${#MIGRATION_POD_UID}" -eq 36
+        case "$MIGRATION_POD_UID" in *[!a-f0-9-]*) exit 1 ;; esac
+        root=/state/workers/$MIGRATION_POD_UID
+        ;;
+      *) exit 1 ;;
+    esac
+    mkdir -p "$root/app/public" "$root/framework/cache/data" \
+      "$root/framework/sessions" "$root/framework/testing" \
+      "$root/framework/views" "$root/logs"

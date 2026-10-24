@@ -4,3 +4,4 @@ resources:
   - flux.yaml
   - squid-proxy-flux.yaml
   - searxng-flux.yaml
+  - runtime-compatibility

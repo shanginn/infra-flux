@@ -1,0 +1,19 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: telegram-exact-observed-dc-egress-v1
+  namespace: telegram-server
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: telegram-server
+      app.kubernetes.io/name: telegram-server
+      service: telegram-server
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 149.154.167.51/32
+      ports:
+        - protocol: TCP
+          port: 5222
